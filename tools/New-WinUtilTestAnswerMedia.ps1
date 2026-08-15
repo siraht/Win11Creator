@@ -9,7 +9,7 @@ param (
 )
 
 function New-WinUtilTestAnswerMedia {
-    [CmdletBinding()]
+    [CmdletBinding(SupportsShouldProcess)]
     param (
         [Parameter(Mandatory)][string]$OutputPath,
         [Parameter(Mandatory)][ValidatePattern('^[A-Za-z0-9][A-Za-z0-9 .()_-]{0,79}$')][string]$Edition,
@@ -18,6 +18,7 @@ function New-WinUtilTestAnswerMedia {
         [scriptblock]$MediaBuilder
     )
 
+    if (-not $PSCmdlet.ShouldProcess($OutputPath, 'Generate ephemeral Windows Setup answer ISO')) { return }
     $userName = $GuestCredential.UserName
     if ($userName -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]{0,19}$' -or $userName -match '^(?i:administrator|defaultaccount|guest|wdagutilityaccount)$') {
         throw 'Guest credential user name must be a non-reserved local account name using 1-20 letters, digits, dot, underscore, or hyphen.'
@@ -109,9 +110,9 @@ function New-WinUtilTestAnswerMedia {
 }
 
 function Remove-WinUtilTestAnswerMedia {
-    [CmdletBinding()]
+    [CmdletBinding(SupportsShouldProcess)]
     param ([Parameter(Mandatory)][string]$Path)
-    if (Test-Path -LiteralPath $Path -PathType Leaf) { Remove-Item -LiteralPath $Path -Force -ErrorAction Stop }
+    if ($PSCmdlet.ShouldProcess($Path, 'Remove ephemeral Windows Setup answer ISO') -and (Test-Path -LiteralPath $Path -PathType Leaf)) { Remove-Item -LiteralPath $Path -Force -ErrorAction Stop }
 }
 
 if ($MyInvocation.InvocationName -ne '.') {
