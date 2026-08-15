@@ -4,9 +4,10 @@ function Invoke-WinUtilISOScript {
         Prepares copied Windows setup media without modifying its install image.
 
     .DESCRIPTION
-        Stages WinUtil's AppX removal, registry tweaks, and scheduled-task cleanup
-        in the answer file for first logon, writes sources\ei.cfg for the selected
-        edition, and optionally adds current-system drivers to one install.wim index.
+        Stages exact policy-approved setup actions in the answer file, writes
+        sources\ei.cfg for the selected edition, and optionally adds current-system
+        drivers to one install.wim index. Without a policy action bundle, the
+        existing answer-file setup responsibilities are preserved unchanged.
 
     .PARAMETER ISOContentsDir
         Root directory of the copied ISO contents.
@@ -34,6 +35,7 @@ function Invoke-WinUtilISOScript {
         [string]$InstallImagePath = "",
         [int]$InstallImageIndex = 1,
         $ResolvedPlan,
+        $ActionBundle,
         [AllowEmptyCollection()][object[]]$RegistryAction = @(),
         [string]$ManifestDirectory = '',
         [psobject]$OfflineServicingSession,
@@ -275,7 +277,108 @@ Retail
         & $Logger "Written sources\ei.cfg for EditionID '$EditionId'."
     }
 
-    function Add-WinUtilISOSetupCustomizations {
+    function Add-WinUtilISOPolicySetupActions {
+        param (
+            [Parameter(Mandatory)][string]$XmlContent,
+            [Parameter(Mandatory)][int]$InstallImageIndex,
+            $ActionBundle,
+            [object[]]$RegistryAction = @(),
+            [scriptblock]$Logger
+        )
+
+        $xmlDoc = [xml]::new()
+        $xmlDoc.PreserveWhitespace = $true
+        $xmlDoc.LoadXml($XmlContent)
+        $nsMgr = New-Object System.Xml.XmlNamespaceManager($xmlDoc.NameTable)
+        $nsMgr.AddNamespace('u', 'urn:schemas-microsoft-com:unattend')
+        $nsMgr.AddNamespace('sg', 'https://schneegans.de/windows/unattend-generator/')
+
+        $setupComponent = $xmlDoc.SelectSingleNode('/u:unattend/u:settings[@pass="windowsPE"]/u:component[@name="Microsoft-Windows-Setup"]', $nsMgr)
+        $extensions = $xmlDoc.SelectSingleNode('//sg:Extensions', $nsMgr)
+        $specializeFile = $xmlDoc.SelectSingleNode('//sg:File[@path="C:\Windows\Setup\Scripts\Specialize.ps1"]', $nsMgr)
+        if (-not $setupComponent -or -not $extensions -or -not $specializeFile) {
+            throw 'autounattend.xml is missing a required Windows Setup, Extensions, or Specialize.ps1 node.'
+        }
+
+        $imageInstall = $setupComponent.SelectSingleNode('u:ImageInstall', $nsMgr)
+        if (-not $imageInstall) {
+            $imageInstall = $xmlDoc.CreateElement('ImageInstall', $setupComponent.NamespaceURI)
+            [void]$setupComponent.AppendChild($imageInstall)
+        }
+        $osImage = $imageInstall.SelectSingleNode('u:OSImage', $nsMgr)
+        if (-not $osImage) {
+            $osImage = $xmlDoc.CreateElement('OSImage', $setupComponent.NamespaceURI)
+            [void]$imageInstall.AppendChild($osImage)
+        }
+        $installFrom = $osImage.SelectSingleNode('u:InstallFrom', $nsMgr)
+        if (-not $installFrom) {
+            $installFrom = $xmlDoc.CreateElement('InstallFrom', $osImage.NamespaceURI)
+            [void]$osImage.AppendChild($installFrom)
+        }
+        foreach ($existingMetadata in @($installFrom.SelectNodes('u:MetaData', $nsMgr))) {
+            [void]$installFrom.RemoveChild($existingMetadata)
+        }
+        $metadata = $xmlDoc.CreateElement('MetaData', $setupComponent.NamespaceURI)
+        $metadataAction = $xmlDoc.CreateAttribute('wcm', 'action', 'http://schemas.microsoft.com/WMIConfig/2002/State')
+        $metadataAction.Value = 'add'
+        [void]$metadata.Attributes.Append($metadataAction)
+        $key = $xmlDoc.CreateElement('Key', $setupComponent.NamespaceURI)
+        $key.InnerText = '/IMAGE/INDEX'
+        [void]$metadata.AppendChild($key)
+        $value = $xmlDoc.CreateElement('Value', $setupComponent.NamespaceURI)
+        $value.InnerText = [string]$InstallImageIndex
+        [void]$metadata.AppendChild($value)
+        [void]$installFrom.AppendChild($metadata)
+
+        if (-not $ActionBundle) {
+            $null = & $Logger 'Default WinUtil setup compatibility retained; no policy setup actions were requested.'
+            return $xmlDoc.OuterXml
+        }
+        if ([string]$ActionBundle.SchemaVersion -ne '1.0' -or $ActionBundle.IsAllowed -ne $true) {
+            throw 'ActionBundle must use schema version 1.0 and pass safety evaluation before setup staging.'
+        }
+
+        $stagedRegistryKeys = @($RegistryAction | ForEach-Object {
+            '{0}|{1}|{2}|{3}|{4}|{5}' -f $_.Action, $_.Hive, $_.Key, $_.Name, $_.Type, $_.Value
+        })
+        foreach ($requiredRegistryAction in @($ActionBundle.RegistryActions)) {
+            $requiredKey = '{0}|{1}|{2}|{3}|{4}|{5}' -f $requiredRegistryAction.Action, $requiredRegistryAction.Hive, $requiredRegistryAction.Key, $requiredRegistryAction.Name, $requiredRegistryAction.Type, $requiredRegistryAction.Value
+            if ($stagedRegistryKeys -notcontains $requiredKey) {
+                throw "ActionBundle registry action '$requiredKey' has no concrete offline transaction consumer."
+            }
+        }
+
+        $scriptLines = [System.Collections.Generic.List[string]]::new()
+        $scriptLines.Add("`$ErrorActionPreference = 'Stop'")
+        foreach ($setupAction in @($ActionBundle.SetupActions | Sort-Object { [string]$_.Arguments[2] })) {
+            if ([string]$setupAction.Mechanism -ne 'schtasks-change-disable' -or
+                [string]$setupAction.Phase -ne 'specialize' -or
+                [string]$setupAction.Executable -ne 'schtasks.exe' -or
+                @($setupAction.Arguments).Count -ne 4 -or
+                [string]$setupAction.Arguments[0] -ne '/Change' -or
+                [string]$setupAction.Arguments[1] -ne '/TN' -or
+                [string]$setupAction.Arguments[3] -ne '/Disable') {
+                throw 'Unsupported setup action; only exact schtasks disable intents are accepted.'
+            }
+            $taskPath = [string]$setupAction.Arguments[2]
+            if ($taskPath -notmatch '^\\Microsoft\\Windows\\[A-Za-z0-9 ._(){}-]+(?:\\[A-Za-z0-9 ._(){}-]+)*$') {
+                throw "Unsafe scheduled-task path '$taskPath'; wildcards and command syntax are not allowed."
+            }
+            $scriptLines.Add(('& "$env:SystemRoot\System32\schtasks.exe" /Change /TN ''{0}'' /Disable' -f $taskPath))
+        }
+
+        if ($scriptLines.Count -gt 1) {
+            $policySetupFile = $xmlDoc.CreateElement('File', $extensions.NamespaceURI)
+            $policySetupFile.SetAttribute('path', 'C:\Windows\Setup\Scripts\WinUtil-PolicySetup.ps1')
+            $policySetupFile.InnerText = $scriptLines -join "`r`n"
+            [void]$extensions.AppendChild($policySetupFile)
+            $specializeFile.InnerText = "$($specializeFile.InnerText.TrimEnd())`r`n`r`n& 'C:\Windows\Setup\Scripts\WinUtil-PolicySetup.ps1';"
+            $null = & $Logger "Staged $($scriptLines.Count - 1) exact policy setup actions."
+        }
+        return $xmlDoc.OuterXml
+    }
+
+    function Add-WinUtilISOLegacySetupCustomizations {
         param (
             [Parameter(Mandatory)][string]$XmlContent,
             [Parameter(Mandatory)][int]$InstallImageIndex,
@@ -541,7 +644,7 @@ $appxList
         throw "autounattend.xml content is required to prepare setup media."
     }
 
-    $preparedAutoUnattendXml = Add-WinUtilISOSetupCustomizations -XmlContent $AutoUnattendXml -InstallImageIndex $InstallImageIndex -Logger $Log
+    $preparedAutoUnattendXml = Add-WinUtilISOPolicySetupActions -XmlContent $AutoUnattendXml -InstallImageIndex $InstallImageIndex -ActionBundle $ActionBundle -RegistryAction $RegistryAction -Logger $Log
     $unattendPath = Join-Path $ISOContentsDir "autounattend.xml"
     [System.IO.File]::WriteAllText($unattendPath, $preparedAutoUnattendXml, [System.Text.UTF8Encoding]::new($false))
     & $Log "Written autounattend.xml with WinUtil setup customizations to ISO root ($unattendPath)."

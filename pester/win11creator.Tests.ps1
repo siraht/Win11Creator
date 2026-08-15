@@ -249,7 +249,7 @@ Describe "Win11 Creator setup media" {
         }
     }
 
-    It "stages the complete WinUtil customization script and selected image index" {
+    It "preserves the default setup template without blanket post-install mutations" {
         $contentRoot = Join-Path ([IO.Path]::GetTempPath()) "WinUtilIsoAnswerFile_$([guid]::NewGuid())"
         $template = Get-Content -Path $script:autoUnattendPath -Raw
 
@@ -265,44 +265,18 @@ Describe "Win11 Creator setup media" {
 
             $answerFile.SelectSingleNode('/u:unattend/u:settings[@pass="windowsPE"]/u:component[@name="Microsoft-Windows-Setup"]/u:ImageInstall/u:OSImage/u:InstallFrom/u:MetaData[u:Key="/IMAGE/INDEX"]/u:Value', $nsMgr).InnerText | Should -Be '6'
 
-            $postInstallFile = $answerFile.SelectSingleNode('//sg:File[@path="C:\Windows\Setup\Scripts\WinUtil-PostInstall.ps1"]', $nsMgr)
-            $postInstallFile | Should -Not -BeNullOrEmpty
-            $postInstallFile.InnerText | Should -Match 'Remove-AppxProvisionedPackage'
-            $postInstallFile.InnerText | Should -Match 'DisableWindowsConsumerFeatures'
-            $postInstallFile.InnerText | Should -Match 'Microsoft Compatibility Appraiser'
-            $postInstallFile.InnerText | Should -Match 'OneDriveSetup.exe'
-            $postInstallFile.InnerText | Should -Match 'function Set-WinUtilContentDeliveryManagerValues'
-            $postInstallFile.InnerText | Should -Match ([regex]::Escape('Set-WinUtilContentDeliveryManagerValues $defaultHive'))
-            $postInstallFile.InnerText | Should -Match ([regex]::Escape("Set-WinUtilContentDeliveryManagerValues 'HKCU'"))
-            $postInstallFile.InnerText | Should -Match ([regex]::Escape("Set-WinUtilRegistryValue 'HKCU\Control Panel\UnsupportedHardwareNotificationCache' 'SV1'"))
-            $postInstallFile.InnerText | Should -Match ([regex]::Escape("Set-WinUtilRegistryValue 'HKCU\Control Panel\UnsupportedHardwareNotificationCache' 'SV2'"))
-            foreach ($defaultProfilePath in @(
-                '$defaultHive\Software\Microsoft\Windows\CurrentVersion\AdvertisingInfo',
-                '$defaultHive\Software\Microsoft\Windows\CurrentVersion\Privacy',
-                '$defaultHive\Software\Microsoft\Speech_OneCore\Settings\OnlineSpeechPrivacy',
-                '$defaultHive\Software\Microsoft\Input\TIPC',
-                '$defaultHive\Software\Microsoft\InputPersonalization',
-                '$defaultHive\Software\Microsoft\InputPersonalization\TrainedDataStore',
-                '$defaultHive\Software\Microsoft\Personalization\Settings'
-            )) {
-                $postInstallFile.InnerText | Should -Match ([regex]::Escape($defaultProfilePath))
-            }
-
+            $answerFile.SelectSingleNode('//sg:File[@path="C:\Windows\Setup\Scripts\WinUtil-PostInstall.ps1"]', $nsMgr) | Should -BeNullOrEmpty
+            $answerFile.SelectSingleNode('//sg:File[@path="C:\Windows\Setup\Scripts\WinUtil-PolicySetup.ps1"]', $nsMgr) | Should -BeNullOrEmpty
             $firstLogonFile = $answerFile.SelectSingleNode('//sg:File[@path="C:\Windows\Setup\Scripts\FirstLogon.ps1"]', $nsMgr)
-            $firstLogonFile.InnerText | Should -Match 'WinUtil-PostInstall.ps1'
+            $firstLogonFile.InnerText | Should -Not -Match 'WinUtil-PostInstall|Remove-Appx|TaskCache'
 
             $setupScriptsRoot = Join-Path $contentRoot 'sources\$OEM$\$$\Setup\Scripts'
             Test-Path (Join-Path $setupScriptsRoot 'Specialize.ps1') | Should -BeTrue
             Test-Path (Join-Path $setupScriptsRoot 'DefaultUser.ps1') | Should -BeTrue
             Test-Path (Join-Path $setupScriptsRoot 'FirstLogon.ps1') | Should -BeTrue
-            Test-Path (Join-Path $setupScriptsRoot 'WinUtil-PostInstall.ps1') | Should -BeTrue
-            Get-Content -Path (Join-Path $setupScriptsRoot 'FirstLogon.ps1') -Raw | Should -Match 'WinUtil-PostInstall.ps1'
-            Get-Content -Path (Join-Path $setupScriptsRoot 'WinUtil-PostInstall.ps1') -Raw | Should -Match 'Remove-AppxProvisionedPackage'
-
-            $tokens = $null
-            $errors = $null
-            [System.Management.Automation.Language.Parser]::ParseInput($postInstallFile.InnerText, [ref]$tokens, [ref]$errors) | Out-Null
-            $errors.Count | Should -Be 0
+            Test-Path (Join-Path $setupScriptsRoot 'WinUtil-PostInstall.ps1') | Should -BeFalse
+            Test-Path (Join-Path $setupScriptsRoot 'WinUtil-PolicySetup.ps1') | Should -BeFalse
+            Get-Content -Path (Join-Path $setupScriptsRoot 'FirstLogon.ps1') -Raw | Should -Not -Match 'WinUtil-PostInstall|Remove-Appx|TaskCache'
         } finally {
             Remove-Item -Path $contentRoot -Recurse -Force -ErrorAction SilentlyContinue
         }
