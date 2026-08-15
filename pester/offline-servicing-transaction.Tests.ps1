@@ -309,4 +309,70 @@ Describe 'Offline servicing transaction boundary' {
         Should -Invoke Dismount-WindowsImage -Times 1 -Exactly -ParameterFilter { $Discard }
         $session.State | Should -Be 'Discarded'
     }
+
+    It 'services resolved Defender feature and package targets through the dedicated operation' {
+        $feature = [pscustomobject]@{ Kind = 'Feature'; Name = 'Windows-Defender-Feature'; Identity = 'Windows-Defender-Feature'; State = 'Enabled' }
+        $package = [pscustomobject]@{ Kind = 'Package'; Name = 'Microsoft-Windows-Windows-Defender-Package'; Identity = 'Microsoft-Windows-Windows-Defender-Package~31bf~amd64~~10.0.26200.1'; State = 'Installed' }
+        $script:beforeItems = @($feature, $package)
+        $script:afterItems = @([pscustomobject]@{ Kind = 'Feature'; Name = $feature.Name; Identity = $feature.Identity; State = 'DisabledWithPayloadRemoved' })
+        $decisions = @(
+            (New-TransactionDecision Feature $feature.Identity Remove),
+            (New-TransactionDecision Package $package.Identity Remove)
+        )
+        foreach ($defenderDecision in $decisions) { $defenderDecision.PolicyId = 'defender' }
+        $plan = [pscustomobject]@{ SchemaVersion = '1.0'; Safety = [pscustomobject]@{ IsAllowed = $true }; Decisions = $decisions }
+        $operation = [pscustomobject]@{ Operation = 'RemoveDefenderOffline'; SourceComponentId = 'defender'; Targets = @(
+            [pscustomobject]@{ Kind = 'Feature'; Identity = $feature.Identity },
+            [pscustomobject]@{ Kind = 'Package'; Identity = $package.Identity }
+        ) }
+
+        Invoke-WinUtilOfflineServicingTransaction -InstallImagePath $script:wimPath -ImageIndex 6 -ResolvedPlan $plan -MountPath $script:mountPath -ManifestDirectory $script:manifestPath -SecurityOperation $operation | Out-Null
+
+        Should -Invoke Disable-WindowsOptionalFeature -Times 1 -Exactly -ParameterFilter { $FeatureName -eq $feature.Identity -and $Remove }
+        Should -Invoke Remove-WindowsPackage -Times 1 -Exactly -ParameterFilter { $PackageName -eq $package.Identity }
+        Should -Invoke Dismount-WindowsImage -Times 1 -Exactly -ParameterFilter { $Save }
+    }
+
+    It 'rejects missing, duplicate, and non-Defender security targets before mounting' {
+        $defenderDecision = New-TransactionDecision Package 'Microsoft-Windows-Windows-Defender-Package~test' Remove
+        $defenderDecision.PolicyId = 'defender'
+        $plan = [pscustomobject]@{ SchemaVersion = '1.0'; Safety = [pscustomobject]@{ IsAllowed = $true }; Decisions = @($defenderDecision) }
+        $missing = [pscustomobject]@{ Operation = 'RemoveDefenderOffline'; SourceComponentId = 'defender'; Targets = @() }
+        { Invoke-WinUtilOfflineServicingTransaction -InstallImagePath $script:wimPath -ImageIndex 6 -ResolvedPlan $plan -MountPath $script:mountPath -ManifestDirectory $script:manifestPath -SecurityOperation $missing } |
+            Should -Throw '*requires at least one resolved Defender*'
+        { Invoke-WinUtilOfflineServicingTransaction -InstallImagePath $script:wimPath -ImageIndex 6 -ResolvedPlan $plan -MountPath $script:mountPath -ManifestDirectory $script:manifestPath } |
+            Should -Throw '*require the dedicated RemoveDefenderOffline*'
+
+        $target = [pscustomobject]@{ Kind = 'Package'; Identity = $defenderDecision.Identity }
+        $duplicate = [pscustomobject]@{ Operation = 'RemoveDefenderOffline'; SourceComponentId = 'defender'; Targets = @($target, $target) }
+        { Invoke-WinUtilOfflineServicingTransaction -InstallImagePath $script:wimPath -ImageIndex 6 -ResolvedPlan $plan -MountPath $script:mountPath -ManifestDirectory $script:manifestPath -SecurityOperation $duplicate } |
+            Should -Throw '*duplicate target*'
+
+        $retarget = [pscustomobject]@{ Operation = 'RemoveDefenderOffline'; SourceComponentId = 'not-defender'; Targets = @($target) }
+        { Invoke-WinUtilOfflineServicingTransaction -InstallImagePath $script:wimPath -ImageIndex 6 -ResolvedPlan $plan -MountPath $script:mountPath -ManifestDirectory $script:manifestPath -SecurityOperation $retarget } |
+            Should -Throw '*exact RemoveDefenderOffline contract sourced by defender*'
+
+        $updateDecision = New-TransactionDecision Package 'Microsoft-Windows-WindowsUpdate-Package~test' Remove
+        $updateDecision.PolicyId = 'defender'
+        $updatePlan = [pscustomobject]@{ SchemaVersion = '1.0'; Safety = [pscustomobject]@{ IsAllowed = $true }; Decisions = @($updateDecision) }
+        $updateOperation = [pscustomobject]@{ Operation = 'RemoveDefenderOffline'; SourceComponentId = 'defender'; Targets = @([pscustomobject]@{ Kind = 'Package'; Identity = $updateDecision.Identity }) }
+        { Invoke-WinUtilOfflineServicingTransaction -InstallImagePath $script:wimPath -ImageIndex 6 -ResolvedPlan $updatePlan -MountPath $script:mountPath -ManifestDirectory $script:manifestPath -SecurityOperation $updateOperation } |
+            Should -Throw '*overlaps protected servicing or Windows Update*'
+        Should -Invoke Mount-WindowsImage -Times 0 -Exactly
+    }
+
+    It 'discards instead of committing when Defender after-state verification is partial' {
+        $package = [pscustomobject]@{ Kind = 'Package'; Name = 'Microsoft-Windows-Windows-Defender-Package'; Identity = 'Microsoft-Windows-Windows-Defender-Package~test'; State = 'Installed' }
+        $script:beforeItems = @($package)
+        $script:afterItems = @($package)
+        $decision = New-TransactionDecision Package $package.Identity Remove
+        $decision.PolicyId = 'defender'
+        $plan = [pscustomobject]@{ SchemaVersion = '1.0'; Safety = [pscustomobject]@{ IsAllowed = $true }; Decisions = @($decision) }
+        $operation = [pscustomobject]@{ Operation = 'RemoveDefenderOffline'; SourceComponentId = 'defender'; Targets = @([pscustomobject]@{ Kind = 'Package'; Identity = $package.Identity }) }
+
+        { Invoke-WinUtilOfflineServicingTransaction -InstallImagePath $script:wimPath -ImageIndex 6 -ResolvedPlan $plan -MountPath $script:mountPath -ManifestDirectory $script:manifestPath -SecurityOperation $operation } |
+            Should -Throw '*verification failed*remains*'
+        Should -Invoke Dismount-WindowsImage -Times 1 -Exactly -ParameterFilter { $Discard }
+        Should -Invoke Dismount-WindowsImage -Times 0 -Exactly -ParameterFilter { $Save }
+    }
 }
