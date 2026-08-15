@@ -152,7 +152,7 @@ Describe 'Win11 Creator live policy handoff' {
         ($sync.Win11ISOResolvedPlan.Decisions | Where-Object Name -eq 'Microsoft.WindowsFeedbackHub').Action | Should -Be 'Remove'
         $sync.WPFWin11ISOSummaryRemove.Text | Should -BeGreaterThan 0
         @($sync.WPFWin11ISOAppsItems.ItemsSource).Count | Should -BeGreaterThan 0
-        @($sync.WPFWin11ISOAdvancedPackageItems.ItemsSource).Count | Should -Be 4
+        @($sync.WPFWin11ISOAdvancedPackageItems.ItemsSource).Count | Should -Be 5
         $sync.Win11ISOPolicyHandoff.IsReady | Should -BeTrue
         $sync.WPFWin11ISOModifyButton.IsEnabled | Should -BeTrue
     }
