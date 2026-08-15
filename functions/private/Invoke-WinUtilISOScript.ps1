@@ -351,20 +351,34 @@ Retail
         $scriptLines = [System.Collections.Generic.List[string]]::new()
         $scriptLines.Add("`$ErrorActionPreference = 'Stop'")
         foreach ($setupAction in @($ActionBundle.SetupActions | Sort-Object { [string]$_.Arguments[2] })) {
-            if ([string]$setupAction.Mechanism -ne 'schtasks-change-disable' -or
-                [string]$setupAction.Phase -ne 'specialize' -or
-                [string]$setupAction.Executable -ne 'schtasks.exe' -or
-                @($setupAction.Arguments).Count -ne 4 -or
-                [string]$setupAction.Arguments[0] -ne '/Change' -or
-                [string]$setupAction.Arguments[1] -ne '/TN' -or
-                [string]$setupAction.Arguments[3] -ne '/Disable') {
-                throw 'Unsupported setup action; only exact schtasks disable intents are accepted.'
+            switch ([string]$setupAction.Mechanism) {
+                'schtasks-change-disable' {
+                    if ([string]$setupAction.Phase -ne 'specialize' -or
+                        [string]$setupAction.Executable -ne 'schtasks.exe' -or
+                        @($setupAction.Arguments).Count -ne 4 -or
+                        [string]$setupAction.Arguments[0] -ne '/Change' -or
+                        [string]$setupAction.Arguments[1] -ne '/TN' -or
+                        [string]$setupAction.Arguments[3] -ne '/Disable') {
+                        throw 'Unsupported setup action; only exact schtasks disable intents are accepted; the exact OneDrive built-in uninstaller is the sole additional mechanism.'
+                    }
+                    $taskPath = [string]$setupAction.Arguments[2]
+                    if ($taskPath -notmatch '^\\Microsoft\\Windows\\[A-Za-z0-9 ._(){}-]+(?:\\[A-Za-z0-9 ._(){}-]+)*$') {
+                        throw "Unsafe scheduled-task path '$taskPath'; wildcards and command syntax are not allowed."
+                    }
+                    $scriptLines.Add(('& "$env:SystemRoot\System32\schtasks.exe" /Change /TN ''{0}'' /Disable' -f $taskPath))
+                }
+                'onedrive-built-in-uninstaller' {
+                    if ([string]$setupAction.Phase -ne 'specialize' -or
+                        [string]$setupAction.Executable -ne 'OneDriveSetup.exe' -or
+                        @($setupAction.Arguments).Count -ne 1 -or
+                        [string]$setupAction.Arguments[0] -ne '/uninstall' -or
+                        [string]$setupAction.SourceComponentId -ne 'onedrive') {
+                        throw 'Malformed OneDrive setup action; only the built-in OneDriveSetup.exe /uninstall intent is accepted.'
+                    }
+                    $scriptLines.Add('& "$env:SystemRoot\System32\OneDriveSetup.exe" /uninstall')
+                }
+                default { throw "Unsupported setup action mechanism '$($setupAction.Mechanism)'." }
             }
-            $taskPath = [string]$setupAction.Arguments[2]
-            if ($taskPath -notmatch '^\\Microsoft\\Windows\\[A-Za-z0-9 ._(){}-]+(?:\\[A-Za-z0-9 ._(){}-]+)*$') {
-                throw "Unsafe scheduled-task path '$taskPath'; wildcards and command syntax are not allowed."
-            }
-            $scriptLines.Add(('& "$env:SystemRoot\System32\schtasks.exe" /Change /TN ''{0}'' /Disable' -f $taskPath))
         }
 
         if ($scriptLines.Count -gt 1) {
