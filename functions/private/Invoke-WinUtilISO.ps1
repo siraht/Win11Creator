@@ -282,6 +282,7 @@ function Invoke-WinUtilISOModify {
     $injectDrivers = $sync["WPFWin11ISOInjectDrivers"].IsChecked -eq $true
     $resolvedPlan = $sync["Win11ISOResolvedPlan"]
     $registryActions = @($sync["Win11ISORegistryActions"])
+    $actionBundle = $sync["Win11ISOActionBundle"]
     $runspace.SessionStateProxy.SetVariable("sync",                $sync)
     $runspace.SessionStateProxy.SetVariable("isoPath",             $isoPath)
     $runspace.SessionStateProxy.SetVariable("driveLetter",         $driveLetter)
@@ -294,6 +295,7 @@ function Invoke-WinUtilISOModify {
     $runspace.SessionStateProxy.SetVariable("resolvedPlan",       $resolvedPlan)
     $runspace.SessionStateProxy.SetVariable("registryActions",    $registryActions)
     $runspace.SessionStateProxy.SetVariable("offlineSession",    $offlineSession)
+    $runspace.SessionStateProxy.SetVariable("actionBundle",      $actionBundle)
 
     $isoScriptFuncDef   = "function Invoke-WinUtilISOScript {`n" + ${function:Invoke-WinUtilISOScript}.ToString() + "`n}"
     $win11ISOLogFuncDef = "function Write-WinUtilISOLog {`n"     + ${function:Write-WinUtilISOLog}.ToString()     + "`n}"
@@ -381,7 +383,7 @@ function Invoke-WinUtilISOModify {
 
             Log "Writing autounattend.xml and edition selection..."
             $manifestDirectory = Join-Path $workDir 'manifests'
-            Invoke-WinUtilISOScript -ISOContentsDir $isoContents -AutoUnattendXml $autounattendContent -InjectCurrentSystemDrivers $injectDrivers -InstallImagePath $localWim -InstallImageIndex $selectedWimIndex -InstallEditionId $selectedEditionId -ResolvedPlan $resolvedPlan -RegistryAction $registryActions -ManifestDirectory $manifestDirectory -OfflineServicingSession $offlineSession -Log { param($m) Log $m }
+            Invoke-WinUtilISOScript -ISOContentsDir $isoContents -AutoUnattendXml $autounattendContent -InjectCurrentSystemDrivers $injectDrivers -InstallImagePath $localWim -InstallImageIndex $selectedWimIndex -InstallEditionId $selectedEditionId -ResolvedPlan $resolvedPlan -ActionBundle $actionBundle -RegistryAction $registryActions -ManifestDirectory $manifestDirectory -OfflineServicingSession $offlineSession -Log { param($m) Log $m }
 
             SetProgress "Preserving install image..." 70
             if ($resolvedPlan) {

@@ -254,6 +254,9 @@ function Update-WinUtilComponentPolicyUI {
         -SelectedProfileId $SelectedProfileId
     $sync.ComponentPolicyPresentation = $model
     $sync['Win11ISOSelectedProfileId'] = $SelectedProfileId
+    $sync['Win11ISOResolvedPlan'] = $null
+    $sync['Win11ISORegistryActions'] = $null
+    $sync['Win11ISOActionBundle'] = $null
     $sync['Win11ISOAdvancedPackageRows'] = @()
     $handoff = New-WinUtilComponentPolicyHandoff `
         -SelectedProfileId $SelectedProfileId `
