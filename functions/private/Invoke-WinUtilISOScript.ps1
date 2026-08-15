@@ -277,7 +277,7 @@ Retail
         & $Logger "Written sources\ei.cfg for EditionID '$EditionId'."
     }
 
-    function Add-WinUtilISOPolicySetupActions {
+    function Add-WinUtilISOPolicySetupAction {
         param (
             [Parameter(Mandatory)][string]$XmlContent,
             [Parameter(Mandatory)][int]$InstallImageIndex,
@@ -644,7 +644,7 @@ $appxList
         throw "autounattend.xml content is required to prepare setup media."
     }
 
-    $preparedAutoUnattendXml = Add-WinUtilISOPolicySetupActions -XmlContent $AutoUnattendXml -InstallImageIndex $InstallImageIndex -ActionBundle $ActionBundle -RegistryAction $RegistryAction -Logger $Log
+    $preparedAutoUnattendXml = Add-WinUtilISOPolicySetupAction -XmlContent $AutoUnattendXml -InstallImageIndex $InstallImageIndex -ActionBundle $ActionBundle -RegistryAction $RegistryAction -Logger $Log
     $unattendPath = Join-Path $ISOContentsDir "autounattend.xml"
     [System.IO.File]::WriteAllText($unattendPath, $preparedAutoUnattendXml, [System.Text.UTF8Encoding]::new($false))
     & $Log "Written autounattend.xml with WinUtil setup customizations to ISO root ($unattendPath)."
