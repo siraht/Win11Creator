@@ -50,7 +50,11 @@ function Get-WinUtilOfflineImageInventory {
         [Parameter(Mandatory)][ValidateRange(1, 2147483647)][int]$ImageIndex,
         [string]$ImageName = '',
         [AllowEmptyCollection()][object[]]$SystemApp = @(),
-        [hashtable]$InventoryInput
+        [hashtable]$InventoryInput,
+        [scriptblock]$DiscoverSystemApp = {
+            param([string]$Path)
+            @(Get-ChildItem -LiteralPath $Path -Directory -Force -ErrorAction Stop)
+        }
     )
 
     if ($InventoryInput) {
@@ -65,12 +69,36 @@ function Get-WinUtilOfflineImageInventory {
         $packages = @(Get-WindowsPackage -Path $MountedImagePath -ErrorAction Stop)
     }
 
+    $systemAppRoot = [IO.Path]::Combine($MountedImagePath, 'Windows', 'SystemApps')
+    $discoveredSystemApps = @()
+    foreach ($entry in @(& $DiscoverSystemApp $systemAppRoot)) {
+        if ($null -eq $entry) { continue }
+        $entryName = [string]$entry.Name
+        if ([string]::IsNullOrWhiteSpace($entryName) -or $entryName -in @('.', '..') -or $entryName.IndexOfAny([IO.Path]::GetInvalidFileNameChars()) -ge 0) {
+            throw "A SystemApp discovery record contained a malformed identity."
+        }
+        $discoveredSystemApps += [pscustomobject]@{
+            Name = $entryName
+            Identity = $entryName
+            State = 'Discovered'
+        }
+    }
+    $allSystemApps = @($discoveredSystemApps) + @($SystemApp)
+    $systemAppIdentities = @{}
+    foreach ($entry in $allSystemApps) {
+        $identity = if ($entry.Identity) { [string]$entry.Identity } else { [string]$entry.Name }
+        if ([string]::IsNullOrWhiteSpace($identity)) { throw 'A SystemApp inventory record did not contain an identity.' }
+        $key = $identity.Trim().ToUpperInvariant()
+        if ($systemAppIdentities.ContainsKey($key)) { throw "Duplicate SystemApp identity '$identity' was discovered." }
+        $systemAppIdentities[$key] = $true
+    }
+
     $items = @(
         ConvertTo-WinUtilImageInventoryItem -Kind AppX -InputObject $appx
         ConvertTo-WinUtilImageInventoryItem -Kind Capability -InputObject $capabilities
         ConvertTo-WinUtilImageInventoryItem -Kind Feature -InputObject $features
         ConvertTo-WinUtilImageInventoryItem -Kind Package -InputObject $packages
-        ConvertTo-WinUtilImageInventoryItem -Kind SystemApp -InputObject $SystemApp
+        ConvertTo-WinUtilImageInventoryItem -Kind SystemApp -InputObject $allSystemApps
     ) | Sort-Object Kind, Identity
 
     [pscustomobject][ordered]@{

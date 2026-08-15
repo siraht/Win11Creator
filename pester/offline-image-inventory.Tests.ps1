@@ -26,7 +26,8 @@ Describe 'Offline image inventory contract' {
             -ImageIndex 6 `
             -ImageName 'Windows 11 Pro' `
             -InventoryInput $inputRecords `
-            -SystemApp $systemApps
+            -SystemApp $systemApps `
+            -DiscoverSystemApp { @() }
     }
 
     It 'publishes stable versioned source and index metadata' {
@@ -57,5 +58,29 @@ Describe 'Offline image inventory contract' {
     It 'rejects a discovery record without an identity' {
         { ConvertTo-WinUtilImageInventoryItem -Kind Package -InputObject @([pscustomobject]@{}) } |
             Should -Throw '*did not contain an identity*'
+    }
+
+    It 'discovers mounted Search, Windows AI, and WebExperience SystemApps in production-shaped input' {
+        $names = @(
+            'MicrosoftWindows.Client.CBS_cw5n1h2txyewy'
+            'MicrosoftWindows.Client.AIX_cw5n1h2txyewy'
+            'MicrosoftWindows.Client.WebExperience_cw5n1h2txyewy'
+        )
+        $discoveryPath = $null
+        $result = Get-WinUtilOfflineImageInventory -MountedImagePath 'C:\mount' -SourceImagePath 'D:\install.wim' -ImageIndex 1 `
+            -InventoryInput @{ AppX = @(); Capability = @(); Feature = @(); Package = @() } `
+            -DiscoverSystemApp { param($path) $script:discoveryPath = $path; @($names | ForEach-Object { [pscustomobject]@{ Name = $_ } }) }
+
+        $script:discoveryPath | Should -Be ([IO.Path]::Combine('C:\mount', 'Windows', 'SystemApps'))
+        @($result.Items | Where-Object Kind -eq SystemApp).Identity | Should -Be @($names | Sort-Object)
+        @($result.Items | Where-Object Kind -eq SystemApp).State | Should -Be @('Discovered', 'Discovered', 'Discovered')
+    }
+
+    It 'fails closed for malformed and duplicate SystemApp identities' {
+        $empty = @{ AppX = @(); Capability = @(); Feature = @(); Package = @() }
+        { Get-WinUtilOfflineImageInventory -MountedImagePath C:\mount -SourceImagePath D:\install.wim -ImageIndex 1 -InventoryInput $empty -DiscoverSystemApp { [pscustomobject]@{ Name = '' } } } |
+            Should -Throw '*malformed identity*'
+        { Get-WinUtilOfflineImageInventory -MountedImagePath C:\mount -SourceImagePath D:\install.wim -ImageIndex 1 -InventoryInput $empty -SystemApp ([pscustomobject]@{ Identity = 'SearchHost' }) -DiscoverSystemApp { [pscustomobject]@{ Name = 'searchhost' } } } |
+            Should -Throw "*Duplicate SystemApp identity*"
     }
 }
