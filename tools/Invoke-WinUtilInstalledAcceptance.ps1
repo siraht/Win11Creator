@@ -80,14 +80,26 @@ function Get-WinUtilInstalledProbeProvider {
         }
         Registration = {
             param ([string]$Target)
+            $evidence = $null
             switch ($Target) {
                 'Start' { $value = @(Get-AppxPackage -AllUsers -Name 'Microsoft.Windows.StartMenuExperienceHost' -ErrorAction SilentlyContinue).Count -gt 0 }
                 'Explorer' { $value = Test-Path -LiteralPath "$env:SystemRoot\explorer.exe" }
                 'Settings' { $value = Test-Path -LiteralPath 'Registry::HKEY_CLASSES_ROOT\ms-settings' }
-                'WebView2' { $value = Test-Path -LiteralPath 'Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\EdgeUpdate\Clients\{F1E7E5A1-5E70-4A20-BA76-02E5215AC9F5}' }
+                'WebView2' {
+                    $registrations = @(foreach ($root in @(
+                        'Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\EdgeUpdate\Clients',
+                        'Registry::HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients'
+                    )) {
+                        Get-ChildItem -LiteralPath $root -ErrorAction SilentlyContinue | ForEach-Object { Get-ItemProperty -LiteralPath $_.PSPath -ErrorAction SilentlyContinue } | Where-Object { [string]$_.name -match 'WebView2 Runtime' }
+                    })
+                    $executables = @(Get-ChildItem -Path "${env:ProgramFiles(x86)}\Microsoft\EdgeWebView\Application\*\msedgewebview2.exe", "$env:ProgramFiles\Microsoft\EdgeWebView\Application\*\msedgewebview2.exe" -File -ErrorAction SilentlyContinue)
+                    $value = $registrations.Count -gt 0 -or $executables.Count -gt 0
+                    $evidence = "WebView2 registrations=$($registrations.name -join '; '); executables=$($executables.FullName -join '; ')"
+                }
                 default { $value = $false }
             }
-            [pscustomobject]@{ Present = $value; Evidence = "$Target registration=$value" }
+            if (-not $evidence) { $evidence = "$Target registration=$value" }
+            [pscustomobject]@{ Present = $value; Evidence = $evidence }
         }
     }
 }
@@ -148,6 +160,33 @@ function Invoke-WinUtilInstalledAcceptance {
             Add-AcceptanceResult $Id $Area $Required 'Fail' $_.Exception.Message
         }
     }
+    function Test-DeclaredPresence {
+        param ([string]$Id, [string]$Boundary, [object[]]$Arguments)
+        try {
+            $probe = & $ProbeProvider[$Boundary] @Arguments
+            if ($lean) {
+                Add-AcceptanceResult $Id 'DeclaredState' $true $(if ($probe.Present) { 'Fail' } else { 'Pass' }) ([string]$probe.Evidence)
+            } elseif ($probe.Present) {
+                Add-AcceptanceResult $Id 'DeclaredState' $true 'Pass' ([string]$probe.Evidence)
+            } else {
+                Add-AcceptanceResult $Id 'DeclaredState' $false 'NotRun' 'Component is not present in this StockControl source.'
+            }
+        } catch { Add-AcceptanceResult $Id 'DeclaredState' $true 'Fail' $_.Exception.Message }
+    }
+    function Test-DeclaredService {
+        param ([string]$Id, [string]$Name)
+        try {
+            $probe = & $ProbeProvider.Service $Name
+            $available = $probe.Present -and [string]$probe.StartType -ne 'Disabled'
+            if ($lean) {
+                Add-AcceptanceResult $Id 'DeclaredState' $true $(if ($available) { 'Fail' } else { 'Pass' }) ([string]$probe.Evidence)
+            } elseif (-not $probe.Present) {
+                Add-AcceptanceResult $Id 'DeclaredState' $false 'NotRun' 'Service is not present in this StockControl source.'
+            } else {
+                Add-AcceptanceResult $Id 'DeclaredState' $true $(if ($available) { 'Pass' } else { 'Fail' }) ([string]$probe.Evidence)
+            }
+        } catch { Add-AcceptanceResult $Id 'DeclaredState' $true 'Fail' $_.Exception.Message }
+    }
 
     Test-Command 'servicing.dism-checkhealth' 'Servicing' $true 'dism.exe' @('/Online', '/Cleanup-Image', '/CheckHealth')
     if ($Depth -eq 'Release') {
@@ -161,7 +200,9 @@ function Invoke-WinUtilInstalledAcceptance {
     foreach ($serviceName in @('wuauserv', 'BITS', 'UsoSvc', 'WaaSMedicSvc')) {
         Test-ServiceAvailability "update.service.$($serviceName.ToLowerInvariant())" 'WindowsUpdate' $true $serviceName $true
     }
-    Test-Command 'update.scan' 'WindowsUpdate' $true 'powershell.exe' @('-NoProfile', '-NonInteractive', '-Command', '$session = New-Object -ComObject Microsoft.Update.Session; $search = $session.CreateUpdateSearcher().Search(''IsInstalled=0 and IsHidden=0''); if ([int]$search.ResultCode -ne 2) { throw "Windows Update search returned result code $($search.ResultCode)." }; "UpdateScan count=$($search.Updates.Count) result=$($search.ResultCode)"') '(?m)^UpdateScan count=\d+ result=2$'
+    $updateSearchScript = '$session = New-Object -ComObject Microsoft.Update.Session; $search = $session.CreateUpdateSearcher().Search(''IsInstalled=0 and IsHidden=0''); if ([int]$search.ResultCode -ne 2) { throw "Windows Update search returned result code $($search.ResultCode)." }; "UpdateScan count=$($search.Updates.Count) result=$($search.ResultCode)"'
+    $encodedUpdateSearch = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($updateSearchScript))
+    Test-Command 'update.scan' 'WindowsUpdate' $true 'powershell.exe' @('-NoProfile', '-NonInteractive', '-EncodedCommand', $encodedUpdateSearch) '(?m)^UpdateScan count=\d+ result=2$'
 
     foreach ($registration in @('Start', 'Explorer', 'Settings', 'WebView2')) {
         Test-Presence "core.$($registration.ToLowerInvariant())" 'CoreWindows' $true 'Registration' @($registration) $true
@@ -184,7 +225,7 @@ function Invoke-WinUtilInstalledAcceptance {
         'removal.ai' = '*AI*'; 'removal.xbox' = 'Microsoft.Xbox*'; 'removal.consumer-appx' = 'Microsoft.Clipchamp*'
     }
     foreach ($entry in $removalAppx.GetEnumerator()) {
-        Test-Presence $entry.Key 'DeclaredState' $true 'Appx' @($entry.Value) (-not $lean)
+        Test-DeclaredPresence $entry.Key 'Appx' @($entry.Value)
     }
     foreach ($entry in ([ordered]@{
         'removal.search-package' = 'Microsoft-Windows-Search-*'
@@ -193,20 +234,20 @@ function Invoke-WinUtilInstalledAcceptance {
         'removal.coreai-package' = 'Microsoft-Windows-Client-CoreAI-*'
         'removal.aix-package' = 'Microsoft-Windows-Client-AIX-*'
     }).GetEnumerator()) {
-        Test-Presence $entry.Key 'DeclaredState' $true 'Package' @($entry.Value) (-not $lean)
+        Test-DeclaredPresence $entry.Key 'Package' @($entry.Value)
     }
     foreach ($entry in ([ordered]@{
         'removal.search-systemapp' = '*Search*'
         'removal.coreai-systemapp' = '*CoreAI*'
         'removal.aix-systemapp' = '*AIX*'
     }).GetEnumerator()) {
-        Test-Presence $entry.Key 'DeclaredState' $true 'SystemApp' @($entry.Value) (-not $lean)
+        Test-DeclaredPresence $entry.Key 'SystemApp' @($entry.Value)
     }
     foreach ($entry in @(
         @{ Id = 'removal.search'; Name = 'WSearch' }, @{ Id = 'removal.defender'; Name = 'WinDefend' },
         @{ Id = 'removal.telemetry'; Name = 'DiagTrack' }
     )) {
-        Test-ServiceAvailability $entry.Id 'DeclaredState' $true $entry.Name (-not $lean)
+        Test-DeclaredService $entry.Id $entry.Name
     }
     $registryStates = @(
         @{ Id = 'removal.smartscreen'; Path = 'Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\System'; Name = 'EnableSmartScreen'; LeanValue = 0 },
@@ -222,7 +263,7 @@ function Invoke-WinUtilInstalledAcceptance {
             Add-AcceptanceResult $entry.Id 'DeclaredState' $true $(if ($stateMatches) { 'Pass' } else { 'Fail' }) ([string]$probe.Evidence)
         } catch { Add-AcceptanceResult $entry.Id 'DeclaredState' $true 'Fail' $_.Exception.Message }
     }
-    Test-Presence 'removal.onedrive' 'DeclaredState' $true 'File' @("$env:SystemRoot\SysWOW64\OneDriveSetup.exe") (-not $lean)
+    Test-DeclaredPresence 'removal.onedrive' 'File' @("$env:SystemRoot\System32\OneDriveSetup.exe")
     foreach ($taskPath in @(
         '\Microsoft\Windows\Customer Experience Improvement Program\Consolidator',
         '\Microsoft\Windows\Customer Experience Improvement Program\KernelCeipTask',
@@ -230,8 +271,14 @@ function Invoke-WinUtilInstalledAcceptance {
     )) {
         try {
             $task = & $ProbeProvider.Task $taskPath
-            $taskMatches = if ($lean) { -not $task.Present -or -not $task.Enabled } else { $task.Present -and $task.Enabled }
-            Add-AcceptanceResult "removal.task.$(($taskPath.Split('\')[-1]).ToLowerInvariant())" 'DeclaredState' $true $(if ($taskMatches) { 'Pass' } else { 'Fail' }) ([string]$task.Evidence)
+            $id = "removal.task.$(($taskPath.Split('\')[-1]).ToLowerInvariant())"
+            if ($lean) {
+                Add-AcceptanceResult $id 'DeclaredState' $true $(if (-not $task.Present -or -not $task.Enabled) { 'Pass' } else { 'Fail' }) ([string]$task.Evidence)
+            } elseif (-not $task.Present) {
+                Add-AcceptanceResult $id 'DeclaredState' $false 'NotRun' 'Task is not present in this StockControl source.'
+            } else {
+                Add-AcceptanceResult $id 'DeclaredState' $true $(if ($task.Enabled) { 'Pass' } else { 'Fail' }) ([string]$task.Evidence)
+            }
         } catch { Add-AcceptanceResult "removal.task.$(($taskPath.Split('\')[-1]).ToLowerInvariant())" 'DeclaredState' $true 'Fail' $_.Exception.Message }
     }
 
@@ -241,8 +288,12 @@ function Invoke-WinUtilInstalledAcceptance {
     foreach ($serviceName in @('WerSvc', 'PcaSvc', 'SysMain')) {
         Test-ServiceAvailability "protected.service.$($serviceName.ToLowerInvariant())" 'Protected' $true $serviceName $true
     }
-    Test-Presence 'protected.onesettings' 'Protected' $true 'Appx' @('*OneSettings*') $true
-    Test-Presence 'protected.featureconfig' 'Protected' $true 'File' @("$env:SystemRoot\System32\FeatureConfigManager.dll") $true
+    Test-Presence 'protected.onesettings' 'Protected' $true 'File' @("$env:SystemRoot\System32\OneSettingsClient.dll") $true
+    Test-Presence 'protected.featureconfig' 'Protected' $true 'File' @("$env:SystemRoot\System32\FlightSettings.dll") $true
+    try {
+        $oneSettingsTask = & $ProbeProvider.Task '\Microsoft\Windows\Flighting\OneSettings\RefreshCache'
+        Add-AcceptanceResult 'protected.task.onesettings-refreshcache' 'Protected' $true $(if ($oneSettingsTask.Present -and $oneSettingsTask.Enabled) { 'Pass' } else { 'Fail' }) ([string]$oneSettingsTask.Evidence)
+    } catch { Add-AcceptanceResult 'protected.task.onesettings-refreshcache' 'Protected' $true 'Fail' $_.Exception.Message }
     Test-Command 'protected.mitigations' 'Protected' $true 'powershell.exe' @('-NoProfile', '-NonInteractive', '-Command', 'Get-ProcessMitigation -System')
 
     $developerCommands = [ordered]@{
@@ -284,7 +335,7 @@ function Invoke-WinUtilInstalledAcceptance {
     $failedRequired = @($results | Where-Object { $_.Required -and $_.Status -ne 'Pass' })
     $document = [pscustomobject][ordered]@{
         SchemaVersion = '1.0'
-        HarnessVersion = '1.2.0'
+        HarnessVersion = '1.3.0'
         TimestampUtc = [DateTime]::UtcNow.ToString('o')
         ExpectedState = $ExpectedState
         Depth = $Depth
