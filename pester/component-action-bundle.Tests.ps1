@@ -88,9 +88,24 @@ Describe 'Typed component action bundle' {
         $duplicateCatalog = $script:catalog | ConvertTo-Json -Depth 30 | ConvertFrom-Json
         $bingTarget = ($duplicateCatalog.components | Where-Object id -eq 'bing-search').targets[0]
         $bingTarget.operations = @($bingTarget.operations[0], $bingTarget.operations[0])
+        $taskTarget = ($duplicateCatalog.components | Where-Object id -eq 'telemetry-consumer-content').targets |
+            Where-Object kind -eq 'scheduled-task'
+        $taskTarget.operations = @($taskTarget.operations) + $taskTarget.operations[0]
         $result = Resolve-WinUtilComponentPolicyPlan -Inventory $script:inventory -Catalog $duplicateCatalog -Profile $script:leanProfile -OfflineSystemSelect ([pscustomobject]@{ Current = 1 }) -ExpertMode
 
         $result.ActionBundle.RegistryActions | Where-Object Name -eq 'DisableSearchBoxSuggestions' | Should -HaveCount 1
+        $result.ActionBundle.SetupActions | Should -HaveCount 3
+    }
+
+    It 'ActionBundle_SchemaAndProfilesExposeTypedDeveloperChoices' {
+        $schema = Get-Content -LiteralPath (Join-Path $script:repoRoot 'policy/component-policy.schema.json') -Raw | ConvertFrom-Json
+        @($schema.'$defs'.operation.oneOf.properties.operation.const) | Should -Be @(
+            'set-registry-value', 'disable-service', 'disable-scheduled-task-at-setup'
+        )
+        $script:defaultProfile.actions.'openssh-client' | Should -Be 'keep'
+        $script:defaultProfile.actions.'openssh-server' | Should -Be 'keep'
+        $script:leanProfile.actions.'openssh-client' | Should -Be 'protected'
+        $script:leanProfile.actions.'openssh-server' | Should -Be 'protected'
     }
 
     It 'ActionBundle_MalformedRegistryMetadata_PlantedNegative' {
