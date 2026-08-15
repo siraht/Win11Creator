@@ -14,7 +14,7 @@
 
 This compact record is the project owner's requested source for progress, decisions, rationale, lessons, and verification gaps. Update it when a change affects implementation direction or closes a plan item; do not duplicate ordinary commit history or test output here.
 
-**Current status:** Active — policy, safety, headless WPF presentation, typed Lean actions, source-format preparation, and the atomic WIM servicing transaction are integrated; the live one-mount handoff and component-specific Windows proof remain in progress.
+**Current status:** Active — the policy-driven Analyze-to-Build path, typed offline/setup actions, two-mode UAC choice, source-format preparation, and atomic one-mount transaction are integrated; live Windows execution and component-specific installed-state proof remain in progress.
 
 **Pinned baseline**
 
@@ -41,6 +41,9 @@ This compact record is the project owner's requested source for progress, decisi
 * Translate non-inventory policy targets through a closed typed-operation vocabulary. Registry actions carry an explicit offline hive/key/name/type/value; service disablement resolves the mounted SYSTEM hive's single `Select\\Current` control set; scheduled-task actions allow only exact Microsoft task paths staged as `schtasks.exe /Change ... /Disable`. Unknown operations, wildcard task paths, ambiguous control sets, TaskCache edits, and task-directory deletion fail closed.
 * Keep action permission separate from action readiness. Expert mode may make a declared policy conflict nonblocking while preserving its evidence, but an action bundle remains not ready until every required setup action has a concrete staging consumer.
 * Convert a copied `install.esd` selected index into a validated single-index WIM before servicing, preserving the original source media and edition metadata. For FAT32 output, split an oversized serviced WIM into ordered nonempty SWM segments and retain the WIM as the source of truth.
+* Resolve service disables against the mounted image's actual SYSTEM `Select\\Current` value. Load that hive under a unique temporary key, require exactly one valid control-set number, and always unload it; a missing, ambiguous, or unreadable value blocks the action bundle.
+* Retire the unconditional legacy first-logon mutation path. Default WinUtil retains the existing answer-file responsibilities but no longer receives blanket AppX removal, Windows Update service disables, task-directory deletion, or OneDrive removal. Lean stages only validated exact policy task disables at `specialize`; offline registry actions remain in the servicing transaction.
+* Model UAC as a generic mutually exclusive policy choice: keep Windows defaults, suppress prompts while explicitly retaining `EnableLUA=1`, or fully disable with `EnableLUA=0`. Lean defaults to full disable, which retains its Expert-level Store compatibility conflict; simultaneous destructive choices are always blocking.
 
 **Lessons and open verification gaps**
 
@@ -50,9 +53,9 @@ This compact record is the project owner's requested source for progress, decisi
 * The Expert-mode contract is now coordinated: protected overrides retain `forbidden-unless-expert` evidence and become nonblocking only in Expert mode. Live WPF behavior and real dependency truth still require Windows validation.
 * Explicit match semantics and structured conflict declarations resolved the first policy/engine contract mismatches. The catalog-to-action adapter now emits exact registry, service, and scheduled-task setup intents; its scheduled-task intents still require integration with a minimal unattended staging consumer before the bundle can report ready.
 * PSScriptAnalyzer's new-source `$matches`/`$errors` automatic-variable hazards were fixed. Focused production analysis now reports only existing WinUtil naming conventions and UI-model `ShouldProcess` false positives/conventions; unrelated upstream warnings remain out of scope.
-* The Advanced Package Selector has a tested model and actionable override wiring, but it has not yet been populated from a live mounted image. The integration path must obtain inventory, regenerate a safe plan after every override, and stage registry actions without introducing a redundant WIM mount.
+* The Advanced Package Selector now receives the inventory from the still-mounted copied WIM, regenerates the plan/action bundle after every profile, UAC-mode, Expert-mode, or package override, and reuses that mount for Build. Headless/static tests do not prove live WPF interaction or a real mounted 25H2 inventory.
 * ESD selected-index export and FAT32 SWM splitting now have fail-closed preparation primitives and ISO/USB call-path tests. Mocked DISM/Split-WindowsImage coverage does not prove Windows 11 25H2 metadata preservation, boot/install behavior, or physical USB readiness; conversion also must be placed before the live handoff's single analysis mount when those slices are integrated.
-* Upstream Win11 Creator still injects an unconditional first-logon customization script that removes a broad AppX list, disables Windows Update services, and deletes WER/AppCompat/Update task definitions. That legacy path conflicts with the new protected policy and must be replaced by profile-derived offline actions plus the minimal intentional setup residue before any end-to-end profile claim.
+* The broad upstream first-logon helper remains as an uncalled legacy definition, but the media builder no longer invokes it. Tests prove Default injects no blanket post-install script and Lean's generated setup script contains only exact declared task disables; Windows Setup execution still needs VM proof.
 
 **Progress log**
 
@@ -69,6 +72,9 @@ This compact record is the project owner's requested source for progress, decisi
 * `2026-08-15` — Ran the complete suite after wave two: 625 discovered, 591 passed, 32 failed, 2 skipped. All new policy, safety, inventory, resolver, transaction, Win11 Creator, XAML, and compile suites passed; the remaining failures are in the pre-existing Linux-incompatible C-drive, WPF dispatcher, relative-URI, ACL, registry, and service tests.
 * `2026-08-15` — Integrated the typed action-bundle commits `9e1a3c0` through `0b0f689`: exact registry values, mounted-SYSTEM control-set-aware service disables, exact setup-time scheduled-task disables, OpenSSH protection, readiness state, and fail-closed validation. Focused result: 48 passed, 0 failed, 2 Windows-PowerShell skips; compile and focused production analysis passed.
 * `2026-08-15` — Integrated image-format commits `9226d61` and `8ecce7c`: selected-index ESD export with metadata validation/cleanup and deterministic FAT32 SWM preparation with partial-output cleanup. The independent focused run discovered 47 tests: 45 passed, 0 failed, 2 Windows-PowerShell skips. Live DISM, boot, install, and USB proof remains open.
+* `2026-08-15` — Integrated the live handoff in `62481a9` through `4f1df1e`, then reconciled it with ESD preparation and typed actions in `2bd3d1b`/`5ca4eb3`: Analyze copies media, converts ESD before mounting, inventories one mounted WIM, reads SYSTEM `Select\\Current`, resolves every current UI choice, and Build reuses that same session for one commit or discard.
+* `2026-08-15` — Integrated the minimal policy setup consumer in `75e01b6` through `e79a162`: action bundles name concrete registry/setup consumers, media staging accepts only exact `schtasks /Change /TN ... /Disable` intents, and the blanket first-logon mutation call was retired. The combined live/action/format/setup run discovered 124 tests: 122 passed, 0 failed, 2 Windows-PowerShell skips.
+* `2026-08-15` — Integrated mutually exclusive UAC policy/UI commits `98ebaea` through `0b9296a` and the live-bundle assertion `a330fb8`. Prompt suppression emits `EnableLUA=1` plus exact consent values; full disable emits `EnableLUA=0`. The integrated UAC/policy/UI/setup/compile run discovered 86 tests: 84 passed, 0 failed, 2 Windows-PowerShell skips.
 
 ---
 
@@ -316,10 +322,10 @@ Recommended shape:
   * **Proof required:** two profiles producing different resolved plans without changing code.
   * **Proof:** data profiles `default-winutil.json` and `lean-daw.json` (`619791e`, `ce91b13`) pass through the same adapter in `67880d5`; the integration test proves they produce different resolved actions without a code change.
 
-* [ ] **Create `Default WinUtil` profile reproducing current behavior as closely as practical.**
+* [x] **Create `Default WinUtil` profile reproducing current behavior as closely as practical.**
 
   * **Proof required:** resolved-action comparison against upstream behavior.
-  * **Implementation status:** the data profile is complete and resolves conservatively, but the upstream comparison exposed an unconditional legacy first-logon customization path outside the profile. Close this only after that behavior is intentionally mapped into profile-derived actions or retired with an explicit compatibility decision and tests.
+  * **Proof:** the data profile resolves conservatively through the shared adapter; `081e277` intentionally retires the conflicting blanket first-logon mutation call while preserving the answer-file's local-account, edition, and setup responsibilities. `setup-action-consumer.Tests.ps1` and `win11creator.Tests.ps1` prove Default stages neither the legacy post-install script nor policy mutations.
 
 * [x] **Create `Lean DAW` profile.**
 
@@ -658,11 +664,12 @@ Each concept gets its own resolver implementation rather than one giant removal 
 
 ## UAC
 
-* [ ] **Expose two distinct UAC modes.**
+* [x] **Expose two distinct UAC modes.**
 
   * `Disable prompts / auto-elevate`
   * `Fully disable EnableLUA`
   * **Proof required:** UI plus registry tests.
+  * **Proof:** `98ebaea` models prompt suppression and full disable as mutually exclusive data choices with exact typed registry values; `aeb2261` exposes the generic exclusive-choice UI; `a330fb8` proves the selected UI override reaches the live typed action bundle. The focused UAC/policy/UI suite passed all 84 runnable tests.
 
 * [ ] **Lean DAW default currently selects full UAC disable.**
 
@@ -758,7 +765,7 @@ Do not inherit arbitrary SlimDown OOBE customizations.
 
 Inspect current WinUtil Autounattend behavior as implementation input; an annotated XML review is not a deliverable.
 
-* [ ] **Limit answer-file responsibilities to intentional setup functions.**
+* [x] **Limit answer-file responsibilities to intentional setup functions.**
 
   * local account support;
   * edition pinning;
@@ -766,6 +773,7 @@ Inspect current WinUtil Autounattend behavior as implementation input; an annota
   * explicitly approved setup settings.
   * Component removal happens offline wherever technically possible, not through first-login answer-file scripts.
   * **Proof required:** setup test covering the retained responsibilities and a build test showing the removal plan is executed by the offline servicing engine.
+  * **Proof:** `081e277` replaces the unconditional legacy mutation call with `Add-WinUtilISOPolicySetupAction`, which accepts only schema-valid exact task-disable intents and verifies that every registry action is routed to the offline transaction. Default preserves the base answer file without adding a mutation script; Lean stages only its declared task actions. The combined setup/transaction/live-handoff suite passed 122 runnable tests.
 
 ---
 
@@ -808,7 +816,7 @@ The validation layer should answer:
 
 Unit/Pester tests ship in the same change as the capability they verify. This section is the coverage map, not a second set of implementation tasks or a reason to defer tests to a validation phase.
 
-* [ ] **The deep-customization suite covers all unit-level behavior.**
+* [x] **The deep-customization suite covers all unit-level behavior.**
 
   * profile parsing;
   * inventory normalization;
@@ -818,6 +826,7 @@ Unit/Pester tests ship in the same change as the capability they verify. This se
   * UI bindings and XAML validity;
   * dry-run output.
   * **Proof required:** one non-zero Pester summary for the suite, with individual failures retaining their normal diagnostic output. Use snapshots only when semantic assertions would be less precise; do not regenerate them merely to obtain green results.
+  * **Proof:** the integrated focused run after live handoff/setup staging discovered 124 tests and passed 122 with 0 failures and 2 unavailable Windows-PowerShell parser skips. It covers policy/profile parsing, inventory normalization, exact/wildcard/ambiguous matching, unknown/protected behavior, transitive safety, dry-run formatting, typed actions, UI models/XAML, setup staging, source formats, and transaction failure paths using semantic assertions.
 
 ---
 
