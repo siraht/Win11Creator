@@ -14,7 +14,7 @@
 
 This compact record is the project owner's requested source for progress, decisions, rationale, lessons, and verification gaps. Update it when a change affects implementation direction or closes a plan item; do not duplicate ordinary commit history or test output here.
 
-**Current status:** Active — the policy-driven Analyze-to-Build path, typed offline/setup actions, two-mode UAC choice, x64 25H2 source gate, source-format preparation, atomic one-mount transaction, artifact publication, and installed-state harness are integrated. Lean DAW now deliberately blocks instead of routing Defender through generic package servicing; its dedicated Defender consumer plus live Windows/component proof remain in progress.
+**Current status:** Active — the policy-driven Analyze-to-Build path, typed offline/setup/security actions, two-mode UAC choice, x64 25H2 source gate, source-format preparation, atomic one-mount transaction, noninteractive Stock/Lean ISO builder, artifact publication, and installed-state/clean-VM harness are integrated. Defender has a dedicated target-resolving offline consumer with strict after-state checks. The remaining release work is live Windows/WPF/ISO/VM/DAW/developer/hardware proof, not another implementation framework.
 
 **Pinned baseline**
 
@@ -49,10 +49,15 @@ This compact record is the project owner's requested source for progress, decisi
 * Publish the resolved plan, before/after inventories, diff, normal build log, and SHA-256 records only after output creation succeeds. ISO evidence uses a file hash; USB evidence uses a deterministic pre-publication content-tree hash so the evidence directory cannot hash itself.
 * Run release acceptance only on an explicitly labeled Windows x64 self-hosted validation machine. Required checks that cannot run, including missing commercial DAW hooks, are blocking `NotRun` results rather than synthetic passes.
 * Treat Defender as a privileged operation with its own action-bundle channel. Until a dedicated offline consumer proves it handled the resolved image targets, Defender removal makes the bundle not ready and cannot fall through generic feature/package/service servicing. OneDrive uses only the built-in `System32\\OneDriveSetup.exe /uninstall` command at `specialize` in addition to its resolved offline targets.
+* Bind UI readiness to the identity of the still-mounted analysis session, not merely to non-null inventory objects. Baseline recommendations and effective manual decisions remain separate, and every profile/edition/Expert transition invalidates or regenerates the appropriate state.
+* Require an exact before row and terminal after-state for every mutation, and require protected/kept/manual rows to remain unchanged. Defender uses the same rule through its dedicated consumer. A command exit code without the requested state change is failure.
+* Publish transaction manifests as a set through a sibling directory rename, and refuse stale or concurrently created destinations. Consumers never observe a partially refreshed evidence set.
+* Have the self-hosted release job build both acceptance ISOs from one explicitly configured official source, then generate narrowly scoped answer media from the guest credential for each clean VM. Do not rely on pre-generated ISO or answer-media variables.
+* Run offline DISM `CheckHealth` before every commit and `ScanHealth` whenever package removal occurred. Health output reporting repairable, non-repairable, or detected corruption is blocking even when DISM exits zero.
 
 **Lessons and open verification gaps**
 
-* The initial host is Linux and lacks Windows VM tooling. Portable PowerShell `7.6.5` and Pester `5.8.0` are now available for cross-platform compile/unit checks, but Windows-only acceptance still requires a Windows execution environment.
+* The initial host is Linux. Portable PowerShell `7.6.5`, Pester `5.8.0`, QEMU/KVM `10.1`, OVMF Secure Boot firmware, and a software TPM are available. This permits an independent local proving run, while the committed release gate remains the supported Windows/Hyper-V path.
 * The untouched upstream suite is not cross-platform clean: the Linux baseline ran 549 tests with 513 passed, 34 failed, and 2 skipped. Failures were concentrated in Windows-only WPF, registry, service, ACL/path, and driver-injection assumptions; new changes must be compared against this baseline and also run on Windows before release.
 * Generic dependency evaluation can be verified cross-platform, but the accuracy of real Windows dependency declarations still requires catalog review and VM behavior checks.
 * The Expert-mode contract is now coordinated: protected overrides retain `forbidden-unless-expert` evidence and become nonblocking only in Expert mode. Live WPF behavior and real dependency truth still require Windows validation.
@@ -64,6 +69,9 @@ This compact record is the project owner's requested source for progress, decisi
 * Mounted SystemApp discovery and the build-26200 support gate are production-shaped and planted-negative tested, but only a real official 25H2 image can establish the actual Search/AI/WebExperience identities and dependency truth.
 * Artifact publication and the installed-acceptance harness now make missing or invalid evidence fail closed. Their Linux/injected-boundary tests do not establish ISO bootability, Windows servicing health, interactive shell behavior, update success, or DAW/developer compatibility.
 * A production-path audit found that a declared high-risk action can otherwise look complete merely because generic targets exist. Privileged components therefore need an explicit consumer/readiness contract; fail-closed status is correct but does not satisfy the removal requirement.
+* The dedicated Defender consumer now resolves only mounted Feature/Package evidence, prevents those targets from falling through the generic loop, and demands absence or `DisabledWithPayloadRemoved` after servicing. Real 25H2 identity coverage and post-install security/update behavior remain live gates.
+* A successful Windows Update command process is insufficient evidence: the COM search must emit exact `OperationResultCode=2` success evidence. Missing or failed operation results now block installed acceptance.
+* Microsoft’s official Enterprise Evaluation 25H2 EN-US x64 ISO is a usable local control source: 7,092,807,680 bytes, `install.wim` index 1, `Windows 11 Enterprise Evaluation`, build `26200.6584`, SHA-256 `A61ADEAB895EF5A4DB436E0A7011C92A2FF17BB0357F58B13BBC4062E535E7B9`, matching Microsoft’s published hash sheet. This establishes source authenticity, not a successful product build or install by itself.
 
 **Progress log**
 
@@ -88,6 +96,10 @@ This compact record is the project owner's requested source for progress, decisi
 * `2026-08-15` — Ran the complete Linux suite after source-boundary integration: 703 discovered, 669 passed, 32 failed, 2 skipped. The 32 failures remain in the pre-existing Windows-only C-drive, WPF dispatcher, relative-URI, ACL, registry, and service-command categories; all new source, policy, handoff, and support tests passed.
 * `2026-08-15` — Hardened publication in `d09a69a`/`f4c84fb`: empty output/log inputs reject, USB copy accepts only documented Robocopy success codes `0`–`7`, and a fatal/malformed copy cannot reach evidence publication. The output/USB regression run discovered 54 tests: 52 passed, 0 failed, 2 Windows-PowerShell skips.
 * `2026-08-15` — Integrated privileged-operation commits `051adbd` through `920b966`. Defender now produces a blocking `SecurityOperations` intent instead of a false-ready generic removal; OneDrive produces an exact allowlisted setup-time uninstaller intent; Copilot's AppX and policy decisions are jointly tested; Search SystemApp directory deletion is explicitly rejected. The component slice passed 86 focused tests, with no live Windows claim.
+* `2026-08-15` — Integrated UI state hardening (`bc7d678` through `c57285e`), clean Hyper-V acceptance (`0bf72b8` through `d773c77`), the dedicated Defender consumer (`bd33bea` through `162ea00`), set-atomic transaction publication (`d6e0f17`/`e8bde58`), and generic mutation/collateral postconditions (`40f212d` through `59c7966`). Focused integration after reconciliation passed 107 tests with 0 failures and 2 Windows-PowerShell skips.
+* `2026-08-15` — Integrated ephemeral answer-media generation (`6c4502a` through `92c3664`) and the noninteractive official-source build path (`9faa88f` through `e2e9227`). The release workflow now builds StockControl and Lean DAW media itself, installs each in a clean Hyper-V guest, and no longer requires pre-generated ISO or answer ISO inputs.
+* `2026-08-15` — Integrated pre-commit component-store health validation (`5a10f9c`) and exact Windows Update COM-result acceptance (`d6ad8a9`). The combined builder/answer/VM/servicing/UI/policy suite discovered 129 tests: 127 passed, 0 failed, 2 Windows-PowerShell skips.
+* `2026-08-15` — Downloaded the official Microsoft Windows 11 Enterprise Evaluation 25H2 EN-US x64 ISO, visually checked Microsoft’s hash PDF, matched the published SHA-256 exactly, and confirmed its single WIM image reports x64 build `26200.6584`. A UEFI Secure Boot/TPM 2.0 KVM control installation is in progress; no VM checkbox closes until its installed-state observables pass.
 
 ---
 
