@@ -31,12 +31,14 @@ This compact record is the project owner's requested source for progress, decisi
 
 **Lessons and open verification gaps**
 
-* The initial host is Linux and currently lacks PowerShell/Pester and Windows VM tooling. Cross-platform structural checks can run here, but Windows-only acceptance requires a Windows execution environment.
+* The initial host is Linux and lacks Windows VM tooling. Portable PowerShell `7.6.5` and Pester `5.8.0` are now available for cross-platform compile/unit checks, but Windows-only acceptance still requires a Windows execution environment.
+* The untouched upstream suite is not cross-platform clean: the Linux baseline ran 549 tests with 513 passed, 34 failed, and 2 skipped. Failures were concentrated in Windows-only WPF, registry, service, ACL/path, and driver-injection assumptions; new changes must be compared against this baseline and also run on Windows before release.
 
 **Progress log**
 
 * `2026-08-15T19:55:49Z` — Initialized the local fork from upstream `main`; read `AGENTS.md`, `CLAUDE.md`, and `SPEC.md`; confirmed that the only pre-existing workspace artifact was this plan.
 * `2026-08-15` — Committed this implementation plan as fork revision `d849084e11a1c3acc8a9a888b660c97e50596108`; the worktree was clean immediately after the commit.
+* `2026-08-15` — Installed checksum-verified portable PowerShell `7.6.5` under `/data/tmp`, installed Pester `5.8.0`, and ran the untouched upstream suite: 549 discovered, 513 passed, 34 failed, 2 skipped, 0 not run.
 
 ---
 
@@ -189,9 +191,10 @@ Agent A and Agent B can work largely independently after the policy schema has a
   * **Proof:** upstream `0dbe39bc7df41ef7d0cef74426f26c53089a8557`; fork `d849084e11a1c3acc8a9a888b660c97e50596108`; `git status --porcelain` returned no output after the fork commit.
   * **Rationale:** Without a pinned base, later upstream changes make behavior and test results ambiguous.
 
-* [ ] **Run the existing WinUtil Pester suite before changing anything.**
+* [x] **Run the existing WinUtil Pester suite before changing anything.**
 
   * **Proof required:** complete Pester summary showing pass/fail counts and environment details.
+  * **Proof:** on Linux `6.17.0-41-generic`, portable PowerShell `7.6.5` with Pester `5.8.0` discovered 549 tests: 513 passed, 34 failed, 2 skipped, 0 not run. The unmodified-code failures were retained as the comparison baseline rather than treated as passing.
   * **Rationale:** We need to distinguish pre-existing failures from regressions.
 
 * [ ] **Establish the stock end-to-end control using an official Windows 11 ISO and a disposable VM.**
