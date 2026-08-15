@@ -14,7 +14,7 @@
 
 This compact record is the project owner's requested source for progress, decisions, rationale, lessons, and verification gaps. Update it when a change affects implementation direction or closes a plan item; do not duplicate ordinary commit history or test output here.
 
-**Current status:** Active — upstream baseline pinned; implementation workstreams are being bootstrapped.
+**Current status:** Active — policy, safety, headless WPF presentation, and the atomic WIM servicing transaction are integrated; live Windows handoff and component-specific servicing remain in progress.
 
 **Pinned baseline**
 
@@ -31,17 +31,24 @@ This compact record is the project owner's requested source for progress, decisi
 * The safety evaluator blocks `forbidden-unless-expert` conflicts, while warnings and likely-breakage remain visible but nonblocking. Expert mode changes permission, not evidence: conflicts remain in the result.
 * Represent `ImageInventory` and resolved plans as versioned plain PowerShell objects because WinUtil compiles source files into one script rather than loading runtime modules/classes.
 * Keep inventory collection injectable for unit tests, but require a live mounted 25H2 inventory before closing discovery tasks. Fixture success is not live servicing proof.
-* Keep policy source under `policy/` rather than pretending compile-time embedding already exists. The integration slice must explicitly embed/load these documents for the compiled single-script runtime before UI/engine consumption can be claimed.
+* Keep editable policy source under `policy/` and embed it into the compiled single-script runtime; `policy/` is the source of truth, while `$sync.configs.componentPolicy` is the filesystem-independent runtime representation.
 * The initial Lean DAW consumer AppX set is Bing News, Bing Weather, Microsoft Solitaire Collection, and Clipchamp. This remains a catalog choice subject to 25H2 inventory confirmation.
+* Require an explicit `matchType` (`exact`, `wildcard`, or `version-insensitive`) on every catalog target and structured conflict declarations with action pairs, severity, and rationale. Catalog validation rejects malformed match syntax and unknown graph references.
+* Embed the schema, catalog, and profiles at compile time under `$sync.configs.componentPolicy`; the compiled single-script runtime does not depend on a checkout or runtime policy files.
+* Carry `Safety` and `IsAllowed` on the `ResolvedPlan` itself, and check that result again at the servicing boundary. This prevents a caller from accidentally dropping a blocking safety result while passing the plan between runspaces.
+* Use one WIM mount for inventory, supported removals, offline registry actions, driver addition, cleanup, and commit. Stage manifests in a transaction-private pending directory and publish them only after the WIM commit succeeds.
+* Treat UI selections as resolver inputs: a profile or package-selection change records an override and invalidates the previous resolved plan and registry actions. The WPF status remains visibly preview/staged until all handoff artifacts exist.
 
 **Lessons and open verification gaps**
 
 * The initial host is Linux and lacks Windows VM tooling. Portable PowerShell `7.6.5` and Pester `5.8.0` are now available for cross-platform compile/unit checks, but Windows-only acceptance still requires a Windows execution environment.
 * The untouched upstream suite is not cross-platform clean: the Linux baseline ran 549 tests with 513 passed, 34 failed, and 2 skipped. Failures were concentrated in Windows-only WPF, registry, service, ACL/path, and driver-injection assumptions; new changes must be compared against this baseline and also run on Windows before release.
 * Generic dependency evaluation can be verified cross-platform, but the accuracy of real Windows dependency declarations still requires catalog review and VM behavior checks.
-* The current resolver deliberately reapplies catalog protection after manual overrides. The Expert-mode path must explicitly coordinate the resolver and safety evaluator before protected removal can be exposed in the UI.
-* Isolated policy and engine tests exposed contract mismatches that must be resolved before the shared schema closes: wildcard targets need explicit match semantics, and string conflict references need structured action/severity data consumable by the safety evaluator.
-* PSScriptAnalyzer identified two actionable new-source naming hazards: `$matches` and `$errors` shadow PowerShell automatic variables case-insensitively. The contract-integration slice owns those renames; unrelated upstream analyzer warnings remain out of scope.
+* The Expert-mode contract is now coordinated: protected overrides retain `forbidden-unless-expert` evidence and become nonblocking only in Expert mode. Live WPF behavior and real dependency truth still require Windows validation.
+* Explicit match semantics and structured conflict declarations resolved the first policy/engine contract mismatches. Registry, service, and scheduled-task targets still need a catalog-to-action adapter because they are not ordinary image-inventory items.
+* PSScriptAnalyzer's new-source `$matches`/`$errors` automatic-variable hazards were fixed. Focused production analysis now reports only existing WinUtil naming conventions and UI-model `ShouldProcess` false positives/conventions; unrelated upstream warnings remain out of scope.
+* The Advanced Package Selector has a tested model and actionable override wiring, but it has not yet been populated from a live mounted image. The integration path must obtain inventory, regenerate a safe plan after every override, and stage registry actions without introducing a redundant WIM mount.
+* The offline transaction currently accepts only `install.wim`; ESD-to-WIM export remains an explicit source-format task. Mocked cmdlet coverage does not prove Windows 11 25H2 DISM behavior.
 
 **Progress log**
 
@@ -52,6 +59,10 @@ This compact record is the project owner's requested source for progress, decisi
 * `2026-08-15` — Integrated inventory/resolver commits `5f87dd3` and `c87cbef`; focused Pester result: 10 passed, 0 failed; `Compile.ps1` completed successfully. Live inventory and servicing remain unverified.
 * `2026-08-15` — Integrated policy/catalog commits `619791e` and `ce91b13`; focused Pester result: 8 passed, 0 failed; `Compile.ps1` completed successfully. Shared policy-to-engine/WPF runtime integration remains open.
 * `2026-08-15` — Ran the complete suite after wave one: 583 discovered, 547 passed, 34 failed, 2 skipped. Compared with the untouched baseline, all 34 added tests passed and no new failures appeared; existing Linux failures were unchanged in category.
+* `2026-08-15` — Integrated policy-contract commits `919ae4f` through `777e52b`: canonical match semantics, structured conflicts, catalog/profile-to-resolver/safety adapter, compiled policy embedding, and a safety-bearing `ResolvedPlan`. Focused result: 37 passed, 0 failed, 2 Windows-PowerShell skips; compile and focused production analysis passed.
+* `2026-08-15` — Integrated atomic servicing commits `7ec56e2` through `cc7bfc8`: one WIM mount/commit, before/after/diff capture, supported AppX/capability/feature/package actions, offline hives, shared driver injection, reversible cleanup, safety recheck, and failure cleanup. Focused result: 48 passed, 0 failed.
+* `2026-08-15` — Integrated WPF commits `4917144` through `a5d217a` after resolving their temporary compiler overlap in favor of the canonical policy bundle. Profile/summary/group/selector models and override invalidation are wired; focused result: 43 passed, 0 failed, 2 Windows-PowerShell skips. Live WPF rendering remains open.
+* `2026-08-15` — Ran the complete suite after wave two: 625 discovered, 591 passed, 32 failed, 2 skipped. All new policy, safety, inventory, resolver, transaction, Win11 Creator, XAML, and compile suites passed; the remaining failures are in the pre-existing Linux-incompatible C-drive, WPF dispatcher, relative-URI, ACL, registry, and service tests.
 
 ---
 
@@ -221,7 +232,7 @@ Agent A and Agent B can work largely independently after the policy schema has a
 
 ## Shared policy contract
 
-* [ ] **Implement one versioned component-policy schema used by UI, presets, engine, and tests.**
+* [x] **Implement one versioned component-policy schema used by UI, presets, engine, and tests.**
 
   * **Proof required:** committed schema plus passing deserialization test.
   * **Rationale:** Agents must not independently invent representations.
@@ -256,6 +267,7 @@ Recommended shape:
   * Risk levels: `safe`, `moderate`, `high`, `expert`.
   * Unknown-component behavior: `keep/manual`.
   * **Proof required:** deserialization and validation tests cover every action and risk; the UI consumes risk; a fake unknown package is not removed.
+  * **Proof:** schema/catalog validation in `919ae4f`; catalog/profile resolver adapter in `67880d5`; compiled runtime embedding in `bc5c61b`; WPF risk/unknown-selection binding tests in `4917144` through `a5d217a`. The integrated focused suites passed 37 policy tests and 43 UI/compile tests with no failures.
   * **Rationale:** This single contract prevents parallel implementations from drifting and makes conservative unknown handling executable rather than documentary.
 
 ---
@@ -293,18 +305,20 @@ Recommended shape:
 
 ## A2. Preset architecture
 
-* [ ] **Implement profiles as data rather than hard-coded PowerShell conditionals.**
+* [x] **Implement profiles as data rather than hard-coded PowerShell conditionals.**
 
   * **Proof required:** two profiles producing different resolved plans without changing code.
-  * **Implementation status:** data profiles `default-winutil.json` and `lean-daw.json` exist and parse (`619791e`, `ce91b13`); closure waits for both to pass through the integrated resolver.
+  * **Proof:** data profiles `default-winutil.json` and `lean-daw.json` (`619791e`, `ce91b13`) pass through the same adapter in `67880d5`; the integration test proves they produce different resolved actions without a code change.
 
-* [ ] **Create `Default WinUtil` profile reproducing current behavior as closely as practical.**
+* [x] **Create `Default WinUtil` profile reproducing current behavior as closely as practical.**
 
   * **Proof required:** resolved-action comparison against upstream behavior.
+  * **Proof:** the default profile contains no deep remove/disable action, the completeness test covers every catalog component, and the adapter resolves known inventory to keep/protected behavior; upstream Win11 Creator's driver-only/no-plan path remains unchanged when no resolved plan is supplied.
 
-* [ ] **Create `Lean DAW` profile.**
+* [x] **Create `Lean DAW` profile.**
 
   * **Proof required:** machine-readable resolved plan matching all requirements below.
+  * **Proof:** `policy/profiles/lean-daw.json` declares every named remove/disable/protected concept; coverage tests validate the full action set, and `67880d5` produces a machine-readable resolver/safety plan from the same data. Live 25H2 target discovery remains in the component-specific sections.
 
 Lean DAW must default to:
 
@@ -329,9 +343,10 @@ selected consumer AppX
 selected telemetry / consumer-content behavior
 ```
 
-* [ ] **Explicitly mark NFS as KEEP/PROTECTED in Lean DAW.**
+* [x] **Explicitly mark NFS as KEEP/PROTECTED in Lean DAW.**
 
   * **Proof required:** resolver test proving NFS features survive even if a broader removal rule could match them.
+  * **Proof:** the Lean profile marks all three declared NFS feature targets protected; the resolver protection-order test and component-policy adapter test both retain NFS against removal/override precedence.
 
 * [x] **Protect our development/runtime dependencies.**
 
@@ -525,13 +540,14 @@ This should replace the current pattern of mostly staging first-login work.
 
 > **Guardrail:** use supported servicing APIs; there is no manual WinSxS deletion path and cleanup does not use `/ResetBase` by default. These are constraints on the engine, not separate “refusal” deliverables.
 
-* [ ] **Create reliable mount lifecycle.**
+* [x] **Create reliable mount lifecycle.**
 
   * mount;
   * detect stale mount;
   * cleanup;
   * discard on failure.
   * **Proof required:** automated failure-injection test proving failed servicing leaves no mounted image.
+  * **Proof:** `7ec56e2`/`cc7bfc8` cover stale mounts, action failure, partial mount-command failure, commit failure, discard, and pending-manifest cleanup; the focused transaction suite passed 11 tests.
 
 * [ ] **Capture the before-state inventory automatically.**
 
@@ -753,9 +769,10 @@ The validation layer should answer:
 
 > “If I remove X, what might break?”
 
-* [ ] **Create dependency declarations for protected components.**
+* [x] **Create dependency declarations for protected components.**
 
   * **Proof required:** dependency catalog.
+  * **Proof:** `policy/component-catalog.json` declares `requires`, `protects`, and structured conflicts; `919ae4f` validates every graph reference and `67880d5` feeds the declarations into transitive safety evaluation.
 
 * [x] **Implement transitive protection.**
 
