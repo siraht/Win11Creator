@@ -14,7 +14,7 @@
 
 This compact record is the project owner's requested source for progress, decisions, rationale, lessons, and verification gaps. Update it when a change affects implementation direction or closes a plan item; do not duplicate ordinary commit history or test output here.
 
-**Current status:** Active — the policy-driven Analyze-to-Build path, typed offline/setup actions, two-mode UAC choice, source-format preparation, and atomic one-mount transaction are integrated; live Windows execution and component-specific installed-state proof remain in progress.
+**Current status:** Active — the policy-driven Analyze-to-Build path, typed offline/setup actions, two-mode UAC choice, x64 25H2 source gate, source-format preparation, atomic one-mount transaction, artifact publication, and installed-state harness are integrated; live Windows execution and component-specific installed-state proof remain in progress.
 
 **Pinned baseline**
 
@@ -44,6 +44,10 @@ This compact record is the project owner's requested source for progress, decisi
 * Resolve service disables against the mounted image's actual SYSTEM `Select\\Current` value. Load that hive under a unique temporary key, require exactly one valid control-set number, and always unload it; a missing, ambiguous, or unreadable value blocks the action bundle.
 * Retire the unconditional legacy first-logon mutation path. Default WinUtil retains the existing answer-file responsibilities but no longer receives blanket AppX removal, Windows Update service disables, task-directory deletion, or OneDrive removal. Lean stages only validated exact policy task disables at `specialize`; offline registry actions remain in the servicing transaction.
 * Model UAC as a generic mutually exclusive policy choice: keep Windows defaults, suppress prompts while explicitly retaining `EnableLUA=1`, or fully disable with `EnableLUA=0`. Lean defaults to full disable, which retains its Expert-level Store compatibility conflict; simultaneous destructive choices are always blocking.
+* Support only images whose complete selectable edition set identifies itself as Windows 11 x64 build `26200`; reject mixed, ambiguous, incomplete, older, or non-x64 media before Analyze. Retain the complete source metadata rather than projecting only display fields.
+* Enumerate mounted `Windows\\SystemApps` directories through the inventory boundary, but keep every unmatched discovery `Manual`. Intentional multi-package destructive wildcards require an explicit `allowMultiple` declaration; otherwise high-/Expert-risk ambiguity still blocks resolution.
+* Publish the resolved plan, before/after inventories, diff, normal build log, and SHA-256 records only after output creation succeeds. ISO evidence uses a file hash; USB evidence uses a deterministic pre-publication content-tree hash so the evidence directory cannot hash itself.
+* Run release acceptance only on an explicitly labeled Windows x64 self-hosted validation machine. Required checks that cannot run, including missing commercial DAW hooks, are blocking `NotRun` results rather than synthetic passes.
 
 **Lessons and open verification gaps**
 
@@ -51,11 +55,13 @@ This compact record is the project owner's requested source for progress, decisi
 * The untouched upstream suite is not cross-platform clean: the Linux baseline ran 549 tests with 513 passed, 34 failed, and 2 skipped. Failures were concentrated in Windows-only WPF, registry, service, ACL/path, and driver-injection assumptions; new changes must be compared against this baseline and also run on Windows before release.
 * Generic dependency evaluation can be verified cross-platform, but the accuracy of real Windows dependency declarations still requires catalog review and VM behavior checks.
 * The Expert-mode contract is now coordinated: protected overrides retain `forbidden-unless-expert` evidence and become nonblocking only in Expert mode. Live WPF behavior and real dependency truth still require Windows validation.
-* Explicit match semantics and structured conflict declarations resolved the first policy/engine contract mismatches. The catalog-to-action adapter now emits exact registry, service, and scheduled-task setup intents; its scheduled-task intents still require integration with a minimal unattended staging consumer before the bundle can report ready.
+* Explicit match semantics and structured conflict declarations resolved the first policy/engine contract mismatches. The catalog-to-action adapter emits exact registry, service, and scheduled-task setup intents; the media builder now consumes those task intents at `specialize` and rejects any unsupported command shape.
 * PSScriptAnalyzer's new-source `$matches`/`$errors` automatic-variable hazards were fixed. Focused production analysis now reports only existing WinUtil naming conventions and UI-model `ShouldProcess` false positives/conventions; unrelated upstream warnings remain out of scope.
 * The Advanced Package Selector now receives the inventory from the still-mounted copied WIM, regenerates the plan/action bundle after every profile, UAC-mode, Expert-mode, or package override, and reuses that mount for Build. Headless/static tests do not prove live WPF interaction or a real mounted 25H2 inventory.
-* ESD selected-index export and FAT32 SWM splitting now have fail-closed preparation primitives and ISO/USB call-path tests. Mocked DISM/Split-WindowsImage coverage does not prove Windows 11 25H2 metadata preservation, boot/install behavior, or physical USB readiness; conversion also must be placed before the live handoff's single analysis mount when those slices are integrated.
+* ESD selected-index export and FAT32 SWM splitting now have fail-closed preparation primitives and ISO/USB call-path tests, and conversion occurs before the live handoff's single analysis mount. Mocked DISM/Split-WindowsImage coverage does not prove Windows 11 25H2 metadata preservation, boot/install behavior, or physical USB readiness.
 * The broad upstream first-logon helper remains as an uncalled legacy definition, but the media builder no longer invokes it. Tests prove Default injects no blanket post-install script and Lean's generated setup script contains only exact declared task disables; Windows Setup execution still needs VM proof.
+* Mounted SystemApp discovery and the build-26200 support gate are production-shaped and planted-negative tested, but only a real official 25H2 image can establish the actual Search/AI/WebExperience identities and dependency truth.
+* Artifact publication and the installed-acceptance harness now make missing or invalid evidence fail closed. Their Linux/injected-boundary tests do not establish ISO bootability, Windows servicing health, interactive shell behavior, update success, or DAW/developer compatibility.
 
 **Progress log**
 
@@ -75,6 +81,9 @@ This compact record is the project owner's requested source for progress, decisi
 * `2026-08-15` — Integrated the live handoff in `62481a9` through `4f1df1e`, then reconciled it with ESD preparation and typed actions in `2bd3d1b`/`5ca4eb3`: Analyze copies media, converts ESD before mounting, inventories one mounted WIM, reads SYSTEM `Select\\Current`, resolves every current UI choice, and Build reuses that same session for one commit or discard.
 * `2026-08-15` — Integrated the minimal policy setup consumer in `75e01b6` through `e79a162`: action bundles name concrete registry/setup consumers, media staging accepts only exact `schtasks /Change /TN ... /Disable` intents, and the blanket first-logon mutation call was retired. The combined live/action/format/setup run discovered 124 tests: 122 passed, 0 failed, 2 Windows-PowerShell skips.
 * `2026-08-15` — Integrated mutually exclusive UAC policy/UI commits `98ebaea` through `0b9296a` and the live-bundle assertion `a330fb8`. Prompt suppression emits `EnableLUA=1` plus exact consent values; full disable emits `EnableLUA=0`. The integrated UAC/policy/UI/setup/compile run discovered 86 tests: 84 passed, 0 failed, 2 Windows-PowerShell skips.
+* `2026-08-15` — Integrated intentional multi-match declarations (`7ea477b`), mounted SystemApp discovery (`378f767`/`8b347e5`), the complete-image x64 25H2 build-26200 gate (`146ce56`), and mount-verification cleanup hardening (`004489e`). Focused source/inventory/live/UI checks discovered 80 tests: 78 passed, 0 failed, 2 Windows-PowerShell skips.
+* `2026-08-15` — Integrated versioned transaction manifests and atomic ISO/USB evidence publication in `7e913c6` through `f494bb2`, followed by the installed Windows acceptance harness and self-hosted release gate in `e7beec5` through `5d975f1`. The combined focused run discovered 136 tests: 134 passed, 0 failed, 2 Windows-PowerShell skips.
+* `2026-08-15` — Ran the complete Linux suite after source-boundary integration: 703 discovered, 669 passed, 32 failed, 2 skipped. The 32 failures remain in the pre-existing Windows-only C-drive, WPF dispatcher, relative-URI, ACL, registry, and service-command categories; all new source, policy, handoff, and support tests passed.
 
 ---
 
@@ -1088,9 +1097,10 @@ AfterManifest
 TestResults
 ```
 
-* [ ] **Implement and version the `ImageInventory`, `ResolvedPlan`, and before/after manifest interfaces.**
+* [x] **Implement and version the `ImageInventory`, `ResolvedPlan`, and before/after manifest interfaces.**
 
   * **Proof required:** schemas, representative samples, and producer/consumer contract tests for each interface.
+  * **Proof:** schema-versioned runtime producers and consumers are covered by the inventory/resolver/transaction suites; `7e913c6` adds the checked-in v1 manifest schema and validates the resolved-plan, before, after, and diff contracts before publication.
 
 * [ ] **All workstreams consume the same fixtures in tests.**
 
