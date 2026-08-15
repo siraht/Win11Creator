@@ -88,9 +88,11 @@ function Invoke-WinUtilISOWriteUSB {
     $runspace.SessionStateProxy.SetVariable("manifestDirectory", (Join-Path ([string]$sync['Win11ISOWorkDir']) 'manifests'))
     $runspace.SessionStateProxy.SetVariable("buildLogPath", (Join-Path ([string]$sync['Win11ISOWorkDir']) 'WinUtil_Win11ISO.log'))
     $fat32ImageFuncDef = "function ConvertTo-WinUtilFat32Image {`n" + ${function:ConvertTo-WinUtilFat32Image}.ToString() + "`n}"
+    $robocopyFuncDef = "function Invoke-WinUtilRobocopy {`n" + ${function:Invoke-WinUtilRobocopy}.ToString() + "`n}"
     $readManifestFuncDef = "function Read-WinUtilOfflineManifest {`n" + ${function:Read-WinUtilOfflineManifest}.ToString() + "`n}"
     $publishArtifactFuncDef = "function Publish-WinUtilBuildArtifact {`n" + ${function:Publish-WinUtilBuildArtifact}.ToString() + "`n}"
     $runspace.SessionStateProxy.SetVariable("fat32ImageFuncDef", $fat32ImageFuncDef)
+    $runspace.SessionStateProxy.SetVariable("robocopyFuncDef", $robocopyFuncDef)
     $runspace.SessionStateProxy.SetVariable("readManifestFuncDef", $readManifestFuncDef)
     $runspace.SessionStateProxy.SetVariable("publishArtifactFuncDef", $publishArtifactFuncDef)
 
@@ -98,6 +100,7 @@ function Invoke-WinUtilISOWriteUSB {
     $script.Runspace = $runspace
     $script.AddScript({
         . ([scriptblock]::Create($fat32ImageFuncDef))
+        . ([scriptblock]::Create($robocopyFuncDef))
         . ([scriptblock]::Create($readManifestFuncDef))
         . ([scriptblock]::Create($publishArtifactFuncDef))
 
@@ -255,16 +258,16 @@ function Invoke-WinUtilISOWriteUSB {
                 if ($fat32Image.Mode -eq 'Split') {
                     Log "install.wim split into $($fat32Image.Segments.Count) FAT32-compatible segments."
                     Log "Copying remaining files to USB..."
-                    & robocopy $contentsDir $usbDrive /E /XF install.wim /NFL /NDL /NJH /NJS
+                    $copyResult = Invoke-WinUtilRobocopy -Source $contentsDir -Destination $usbDrive -ExcludeFile 'install.wim'
                 } else {
-                    & robocopy $contentsDir $usbDrive /E /NFL /NDL /NJH /NJS
+                    $copyResult = Invoke-WinUtilRobocopy -Source $contentsDir -Destination $usbDrive
                 }
             } else {
-                & robocopy $contentsDir $usbDrive /E /NFL /NDL /NJH /NJS
+                $copyResult = Invoke-WinUtilRobocopy -Source $contentsDir -Destination $usbDrive
             }
 
             SetProgress "Finalising USB drive..." 90
-            Log "Files copied to USB."
+            Log "Files copied to USB (robocopy exit code $($copyResult.ExitCode))."
             $publication = Publish-WinUtilBuildArtifact -OutputPath $usbDrive -ManifestDirectory $manifestDirectory -BuildLogPath $buildLogPath
             SetProgress "USB write complete and verified" 100
             Log "USB drive is ready for use. Build evidence: $($publication.EvidenceDirectory)"

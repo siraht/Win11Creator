@@ -191,7 +191,7 @@ Describe "Win11 Creator setup media" {
 
     It "prepares oversized install.wim without changing the copied source image" {
         $script:writeUsbFunction | Should -Match ([regex]::Escape('ConvertTo-WinUtilFat32Image'))
-        $script:writeUsbFunction | Should -Match ([regex]::Escape('/XF install.wim'))
+        $script:writeUsbFunction | Should -Match ([regex]::Escape("-ExcludeFile 'install.wim'"))
         $script:writeUsbFunction | Should -Not -Match ([regex]::Escape('Set-ItemProperty -LiteralPath $installWim'))
         $script:writeUsbFunction | Should -Not -Match ([regex]::Escape('Split-WindowsImage -ImagePath $installWim'))
     }

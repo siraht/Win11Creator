@@ -20,7 +20,7 @@ Describe 'Win11 Creator output publication ordering' {
     }
 
     It 'publishes required evidence after USB copying and before the ready message' {
-        $copied = $script:usbSource.IndexOf('Files copied to USB.')
+        $copied = $script:usbSource.IndexOf('Files copied to USB (robocopy exit code')
         $publish = $script:usbSource.IndexOf('Publish-WinUtilBuildArtifact', $copied)
         $ready = $script:usbSource.IndexOf('USB drive is ready for use.', $copied)
 

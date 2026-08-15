@@ -265,7 +265,7 @@ Describe 'Win11 Creator image-format callable paths' {
     It 'injects FAT32 preparation into the USB runspace and excludes WIM only after a split' {
         $script:usbSource | Should -Match ([regex]::Escape('${function:ConvertTo-WinUtilFat32Image}.ToString()'))
         $prepareIndex = $script:usbSource.IndexOf('ConvertTo-WinUtilFat32Image `')
-        $excludeIndex = $script:usbSource.IndexOf('& robocopy $contentsDir $usbDrive /E /XF install.wim')
+        $excludeIndex = $script:usbSource.IndexOf("Invoke-WinUtilRobocopy -Source `$contentsDir -Destination `$usbDrive -ExcludeFile 'install.wim'")
         $readyIndex = $script:usbSource.IndexOf('USB drive is ready for use.')
 
         $prepareIndex | Should -BeGreaterThan -1
