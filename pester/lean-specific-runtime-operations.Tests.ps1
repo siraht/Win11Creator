@@ -23,6 +23,34 @@ Describe 'Lean-specific runtime operations' {
         } | Should -HaveCount 1
     }
 
+    It 'makes Lean ready only when the mounted inventory resolves a removable Defender target' {
+        $inventory = [pscustomobject]@{
+            SchemaVersion = '1.0'; Source = $script:inventory.Source
+            Items = @([pscustomobject]@{ Kind = 'Package'; Name = 'Microsoft-Windows-Windows-Defender-Client-Package'; Identity = 'Microsoft-Windows-Windows-Defender-Client-Package~31bf~amd64~~10.0.26200.1'; State = 'Installed' })
+        }
+        $result = Resolve-WinUtilComponentPolicyPlan -Inventory $inventory -Catalog $script:catalog -Profile $script:lean -OfflineSystemSelect ([pscustomobject]@{ Current = 1 }) -ExpertMode
+        $result.ActionBundle.IsReady | Should -BeTrue
+        $result.ActionBundle.SecurityOperations[0].Targets | Should -HaveCount 1
+        $result.ActionBundle.SecurityOperations[0].Targets[0].Identity | Should -Be $inventory.Items[0].Identity
+    }
+
+    It 'rejects ambiguous high-risk Defender feature inventory' {
+        $inventory = [pscustomobject]@{
+            SchemaVersion = '1.0'; Source = $script:inventory.Source
+            Items = @(
+                [pscustomobject]@{ Kind = 'Feature'; Name = 'Windows-Defender-A'; Identity = 'Windows-Defender-A'; State = 'Enabled' }
+                [pscustomobject]@{ Kind = 'Feature'; Name = 'Windows-Defender-B'; Identity = 'Windows-Defender-B'; State = 'Enabled' }
+            )
+        }
+        { Resolve-WinUtilComponentPolicyPlan -Inventory $inventory -Catalog $script:catalog -Profile $script:lean -OfflineSystemSelect ([pscustomobject]@{ Current = 1 }) -ExpertMode } |
+            Should -Throw '*High-risk policy*defender*ambiguous*'
+    }
+
+    It 'wires SecurityOperations into both one-mount transaction paths' {
+        $isoSource = Get-Content -LiteralPath (Join-Path $script:repoRoot 'functions/private/Invoke-WinUtilISOScript.ps1') -Raw
+        ([regex]::Matches($isoSource, [regex]::Escape('-SecurityOperation @($ActionBundle.SecurityOperations)'))).Count | Should -Be 2
+    }
+
     It 'resolves OneDrive provisioning cleanup to the exact built-in uninstaller' {
         $result = Resolve-WinUtilComponentPolicyPlan -Inventory $script:inventory -Catalog $script:catalog -Profile $script:lean -ActionOverrides @{ defender = 'keep' } -OfflineSystemSelect ([pscustomobject]@{ Current = 1 }) -ExpertMode
         $action = @($result.ActionBundle.SetupActions | Where-Object SourceComponentId -eq onedrive)

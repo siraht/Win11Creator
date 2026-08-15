@@ -137,14 +137,7 @@ function Resolve-WinUtilComponentPolicyPlan {
                             $securityOperations.Add([pscustomobject]@{
                                 Operation = 'RemoveDefenderOffline'
                                 SourceComponentId = $componentId
-                                Status = 'BlockedNoValidatedConsumer'
-                            })
-                            $operationConflicts.Add([pscustomobject]@{
-                                ComponentId = $componentId
-                                RelatedComponentId = $componentId
-                                Severity = 'unsupported-operation'
-                                Reason = 'Defender removal requires a dedicated validated offline consumer; ordinary AppX, feature, package, or service removal is not accepted.'
-                                IsBlocking = $true
+                                Targets = @()
                             })
                         }
                         default {
@@ -204,6 +197,35 @@ function Resolve-WinUtilComponentPolicyPlan {
                 IsBlocking = -not $ExpertMode.IsPresent
             })
         }
+    }
+
+    foreach ($securityOperation in $securityOperations) {
+        if ([string]$securityOperation.Operation -ne 'RemoveDefenderOffline' -or [string]$securityOperation.SourceComponentId -ne 'defender') {
+            $operationConflicts.Add([pscustomobject]@{
+                ComponentId = [string]$securityOperation.SourceComponentId
+                RelatedComponentId = [string]$securityOperation.SourceComponentId
+                Severity = 'unsupported-operation'
+                Reason = 'Security operation is not the exact Defender offline-removal contract.'
+                IsBlocking = $true
+            })
+            continue
+        }
+        $defenderTargets = @($baseResolvedPlan.Decisions | Where-Object {
+            [string]$_.PolicyId -eq 'defender' -and [string]$_.Action -eq 'Remove' -and [string]$_.Kind -in @('Feature', 'Package')
+        })
+        if ($defenderTargets.Count -eq 0) {
+            $operationConflicts.Add([pscustomobject]@{
+                ComponentId = 'defender'
+                RelatedComponentId = 'defender'
+                Severity = 'unsupported-operation'
+                Reason = 'The mounted image exposes no resolved removable Defender feature or servicing-package target; Defender removal remains blocked.'
+                IsBlocking = $true
+            })
+            continue
+        }
+        $securityOperation.Targets = @($defenderTargets | ForEach-Object {
+            [pscustomobject][ordered]@{ Kind = [string]$_.Kind; Identity = [string]$_.Identity }
+        })
     }
 
     $allConflicts = @($evaluatedSafety.Conflicts) + @($protectedOverrideConflicts) +
