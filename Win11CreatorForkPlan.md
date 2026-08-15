@@ -14,7 +14,7 @@
 
 This compact record is the project owner's requested source for progress, decisions, rationale, lessons, and verification gaps. Update it when a change affects implementation direction or closes a plan item; do not duplicate ordinary commit history or test output here.
 
-**Current status:** Active — policy, safety, headless WPF presentation, and the atomic WIM servicing transaction are integrated; live Windows handoff and component-specific servicing remain in progress.
+**Current status:** Active — policy, safety, headless WPF presentation, typed Lean actions, source-format preparation, and the atomic WIM servicing transaction are integrated; the live one-mount handoff and component-specific Windows proof remain in progress.
 
 **Pinned baseline**
 
@@ -38,6 +38,9 @@ This compact record is the project owner's requested source for progress, decisi
 * Carry `Safety` and `IsAllowed` on the `ResolvedPlan` itself, and check that result again at the servicing boundary. This prevents a caller from accidentally dropping a blocking safety result while passing the plan between runspaces.
 * Use one WIM mount for inventory, supported removals, offline registry actions, driver addition, cleanup, and commit. Stage manifests in a transaction-private pending directory and publish them only after the WIM commit succeeds.
 * Treat UI selections as resolver inputs: a profile or package-selection change records an override and invalidates the previous resolved plan and registry actions. The WPF status remains visibly preview/staged until all handoff artifacts exist.
+* Translate non-inventory policy targets through a closed typed-operation vocabulary. Registry actions carry an explicit offline hive/key/name/type/value; service disablement resolves the mounted SYSTEM hive's single `Select\\Current` control set; scheduled-task actions allow only exact Microsoft task paths staged as `schtasks.exe /Change ... /Disable`. Unknown operations, wildcard task paths, ambiguous control sets, TaskCache edits, and task-directory deletion fail closed.
+* Keep action permission separate from action readiness. Expert mode may make a declared policy conflict nonblocking while preserving its evidence, but an action bundle remains not ready until every required setup action has a concrete staging consumer.
+* Convert a copied `install.esd` selected index into a validated single-index WIM before servicing, preserving the original source media and edition metadata. For FAT32 output, split an oversized serviced WIM into ordered nonempty SWM segments and retain the WIM as the source of truth.
 
 **Lessons and open verification gaps**
 
@@ -45,10 +48,10 @@ This compact record is the project owner's requested source for progress, decisi
 * The untouched upstream suite is not cross-platform clean: the Linux baseline ran 549 tests with 513 passed, 34 failed, and 2 skipped. Failures were concentrated in Windows-only WPF, registry, service, ACL/path, and driver-injection assumptions; new changes must be compared against this baseline and also run on Windows before release.
 * Generic dependency evaluation can be verified cross-platform, but the accuracy of real Windows dependency declarations still requires catalog review and VM behavior checks.
 * The Expert-mode contract is now coordinated: protected overrides retain `forbidden-unless-expert` evidence and become nonblocking only in Expert mode. Live WPF behavior and real dependency truth still require Windows validation.
-* Explicit match semantics and structured conflict declarations resolved the first policy/engine contract mismatches. Registry, service, and scheduled-task targets still need a catalog-to-action adapter because they are not ordinary image-inventory items.
+* Explicit match semantics and structured conflict declarations resolved the first policy/engine contract mismatches. The catalog-to-action adapter now emits exact registry, service, and scheduled-task setup intents; its scheduled-task intents still require integration with a minimal unattended staging consumer before the bundle can report ready.
 * PSScriptAnalyzer's new-source `$matches`/`$errors` automatic-variable hazards were fixed. Focused production analysis now reports only existing WinUtil naming conventions and UI-model `ShouldProcess` false positives/conventions; unrelated upstream warnings remain out of scope.
 * The Advanced Package Selector has a tested model and actionable override wiring, but it has not yet been populated from a live mounted image. The integration path must obtain inventory, regenerate a safe plan after every override, and stage registry actions without introducing a redundant WIM mount.
-* The offline transaction currently accepts only `install.wim`; ESD-to-WIM export remains an explicit source-format task. Mocked cmdlet coverage does not prove Windows 11 25H2 DISM behavior.
+* ESD selected-index export and FAT32 SWM splitting now have fail-closed preparation primitives and ISO/USB call-path tests. Mocked DISM/Split-WindowsImage coverage does not prove Windows 11 25H2 metadata preservation, boot/install behavior, or physical USB readiness; conversion also must be placed before the live handoff's single analysis mount when those slices are integrated.
 * Upstream Win11 Creator still injects an unconditional first-logon customization script that removes a broad AppX list, disables Windows Update services, and deletes WER/AppCompat/Update task definitions. That legacy path conflicts with the new protected policy and must be replaced by profile-derived offline actions plus the minimal intentional setup residue before any end-to-end profile claim.
 
 **Progress log**
@@ -64,6 +67,8 @@ This compact record is the project owner's requested source for progress, decisi
 * `2026-08-15` — Integrated atomic servicing commits `7ec56e2` through `cc7bfc8`: one WIM mount/commit, before/after/diff capture, supported AppX/capability/feature/package actions, offline hives, shared driver injection, reversible cleanup, safety recheck, and failure cleanup. Focused result: 48 passed, 0 failed.
 * `2026-08-15` — Integrated WPF commits `4917144` through `a5d217a` after resolving their temporary compiler overlap in favor of the canonical policy bundle. Profile/summary/group/selector models and override invalidation are wired; focused result: 43 passed, 0 failed, 2 Windows-PowerShell skips. Live WPF rendering remains open.
 * `2026-08-15` — Ran the complete suite after wave two: 625 discovered, 591 passed, 32 failed, 2 skipped. All new policy, safety, inventory, resolver, transaction, Win11 Creator, XAML, and compile suites passed; the remaining failures are in the pre-existing Linux-incompatible C-drive, WPF dispatcher, relative-URI, ACL, registry, and service tests.
+* `2026-08-15` — Integrated the typed action-bundle commits `9e1a3c0` through `0b0f689`: exact registry values, mounted-SYSTEM control-set-aware service disables, exact setup-time scheduled-task disables, OpenSSH protection, readiness state, and fail-closed validation. Focused result: 48 passed, 0 failed, 2 Windows-PowerShell skips; compile and focused production analysis passed.
+* `2026-08-15` — Integrated image-format commits `9226d61` and `8ecce7c`: selected-index ESD export with metadata validation/cleanup and deterministic FAT32 SWM preparation with partial-output cleanup. The independent focused run discovered 47 tests: 45 passed, 0 failed, 2 Windows-PowerShell skips. Live DISM, boot, install, and USB proof remains open.
 
 ---
 
