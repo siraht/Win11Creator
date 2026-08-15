@@ -263,4 +263,40 @@ Describe 'Offline servicing transaction boundary' {
         $script:transactionDriverDirectory | Should -Not -BeNullOrEmpty
         @($script:dismCalls | Where-Object { $_ -match '/Mount-Image|/Unmount-Image|/Add-Driver' }).Count | Should -Be 0
     }
+
+    It 'uses one mount across analysis inventory and the servicing commit' {
+        $plan = [pscustomobject]@{ SchemaVersion = '1.0'; Safety = [pscustomobject]@{ IsAllowed = $true }; Decisions = @() }
+        $session = Start-WinUtilOfflineServicingSession -InstallImagePath $script:wimPath -ImageIndex 6 -ImageName 'Windows 11 Pro' -MountPath $script:mountPath
+        $session.Inventory.Source.ImagePath = $script:wimPath
+
+        Invoke-WinUtilOfflineServicingTransaction -InstallImagePath $script:wimPath -ImageIndex 6 -ResolvedPlan $plan -MountPath $script:mountPath -ManifestDirectory $script:manifestPath -Session $session | Out-Null
+
+        Should -Invoke Mount-WindowsImage -Times 1 -Exactly
+        Should -Invoke Dismount-WindowsImage -Times 1 -Exactly -ParameterFilter { $Save }
+        $session.State | Should -Be 'Committed'
+    }
+
+    It 'marks an existing session discarded when servicing fails' {
+        $session = Start-WinUtilOfflineServicingSession -InstallImagePath $script:wimPath -ImageIndex 6 -ImageName 'Windows 11 Pro' -MountPath $script:mountPath
+        $session.Inventory.Source.ImagePath = $script:wimPath
+        Mock Remove-WindowsPackage { throw 'session mutation failure' }
+        $plan = [pscustomobject]@{
+            SchemaVersion = '1.0'; Safety = [pscustomobject]@{ IsAllowed = $true }
+            Decisions = @((New-TransactionDecision Package 'Remove.Package~test' Remove))
+        }
+
+        { Invoke-WinUtilOfflineServicingTransaction -InstallImagePath $script:wimPath -ImageIndex 6 -ResolvedPlan $plan -MountPath $script:mountPath -ManifestDirectory $script:manifestPath -Session $session } |
+            Should -Throw '*session mutation failure*'
+        $session.State | Should -Be 'Discarded'
+    }
+
+    It 'conservatively discards when session mount inspection fails' {
+        $session = [pscustomobject]@{ State = 'Mounted'; MountPath = $script:mountPath }
+        Mock Get-WindowsImage { throw 'inspection failure' } -ParameterFilter { $Mounted }
+
+        Stop-WinUtilOfflineServicingSession -Session $session
+
+        Should -Invoke Dismount-WindowsImage -Times 1 -Exactly -ParameterFilter { $Discard }
+        $session.State | Should -Be 'Discarded'
+    }
 }

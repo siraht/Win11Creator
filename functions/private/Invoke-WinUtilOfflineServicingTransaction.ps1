@@ -1,3 +1,91 @@
+function Start-WinUtilOfflineServicingSession {
+    param (
+        [Parameter(Mandatory)][string]$InstallImagePath,
+        [Parameter(Mandatory)][ValidateRange(1, 2147483647)][int]$ImageIndex,
+        [Parameter(Mandatory)][string]$MountPath,
+        [string]$ImageName = '',
+        [AllowEmptyCollection()][object[]]$SystemAppDiscovery = @(),
+        [scriptblock]$Log = { param($message) Write-Output $message }
+    )
+
+    if ([IO.Path]::GetExtension($InstallImagePath) -ne '.wim') {
+        throw 'Offline analysis requires install.wim; install.esd support belongs to the image-format workflow.'
+    }
+    if (-not (Test-Path -LiteralPath $InstallImagePath)) { throw "install.wim was not found: $InstallImagePath" }
+
+    $mountAttempted = $false
+    try {
+        foreach ($staleMount in @(Get-WindowsImage -Mounted -ErrorAction Stop | Where-Object { $_.Path -eq $MountPath })) {
+            $null = & $Log "Discarding stale image mount at '$MountPath'."
+            Dismount-WindowsImage -Path $MountPath -Discard -ErrorAction Stop | Out-Null
+        }
+        if (Test-Path -LiteralPath $MountPath) { Remove-Item -LiteralPath $MountPath -Recurse -Force -ErrorAction Stop }
+        New-Item -Path $MountPath -ItemType Directory -Force | Out-Null
+
+        $mountAttempted = $true
+        $null = & $Log "Mounting copied install.wim index $ImageIndex once for analysis and servicing."
+        Mount-WindowsImage -ImagePath $InstallImagePath -Index $ImageIndex -Path $MountPath -ErrorAction Stop | Out-Null
+        $inventory = Get-WinUtilOfflineImageInventory -MountedImagePath $MountPath -SourceImagePath $InstallImagePath -ImageIndex $ImageIndex -ImageName $ImageName -SystemApp $SystemAppDiscovery
+        return [pscustomobject][ordered]@{
+            SchemaVersion = '1.0'
+            State = 'Mounted'
+            InstallImagePath = $InstallImagePath
+            ImageIndex = $ImageIndex
+            ImageName = $ImageName
+            MountPath = $MountPath
+            Inventory = $inventory
+        }
+    } catch {
+        if ($mountAttempted) {
+            $registered = $false
+            $cleanupSafe = $true
+            try { $registered = @(Get-WindowsImage -Mounted -ErrorAction Stop | Where-Object { $_.Path -eq $MountPath }).Count -gt 0 } catch {
+                $registered = $true
+                $cleanupSafe = $false
+                $null = & $Log "Mounted-image inspection failed after the mount attempt; attempting a conservative discard at '$MountPath'."
+            }
+            if ($registered) {
+                try {
+                    Dismount-WindowsImage -Path $MountPath -Discard -ErrorAction Stop | Out-Null
+                    $cleanupSafe = $true
+                } catch {
+                    $null = & $Log "Warning: failed to discard analysis mount at '$MountPath': $_"
+                }
+            }
+        } else {
+            $cleanupSafe = $true
+        }
+        if ($cleanupSafe -and (Test-Path -LiteralPath $MountPath)) { Remove-Item -LiteralPath $MountPath -Recurse -Force -ErrorAction SilentlyContinue }
+        throw
+    }
+}
+
+function Stop-WinUtilOfflineServicingSession {
+    param (
+        [Parameter(Mandatory)][psobject]$Session,
+        [scriptblock]$Log = { param($message) Write-Output $message }
+    )
+
+    if ([string]$Session.State -ne 'Mounted') { return }
+    try {
+        try {
+            $registered = @(Get-WindowsImage -Mounted -ErrorAction Stop | Where-Object { $_.Path -eq [string]$Session.MountPath }).Count -gt 0
+        } catch {
+            $null = & $Log "Mounted-image inspection failed; attempting a conservative discard at '$($Session.MountPath)'."
+            $registered = $true
+        }
+        if ($registered) { Dismount-WindowsImage -Path ([string]$Session.MountPath) -Discard -ErrorAction Stop | Out-Null }
+        $Session.State = 'Discarded'
+        $null = & $Log "Discarded offline servicing session at '$($Session.MountPath)'."
+        if (Test-Path -LiteralPath ([string]$Session.MountPath)) {
+            Remove-Item -LiteralPath ([string]$Session.MountPath) -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    } catch {
+        $Session.State = 'Failed'
+        throw "Failed to discard offline servicing session at '$($Session.MountPath)': $_"
+    }
+}
+
 function Invoke-WinUtilOfflineServicingTransaction {
     param (
         [Parameter(Mandatory)][string]$InstallImagePath,
@@ -9,6 +97,7 @@ function Invoke-WinUtilOfflineServicingTransaction {
         [string]$DriverDirectory = '',
         [AllowEmptyCollection()][object[]]$RegistryAction = @(),
         [AllowEmptyCollection()][object[]]$SystemAppDiscovery = @(),
+        [psobject]$Session,
         [scriptblock]$Log = { param($message) Write-Output $message }
     )
 
@@ -119,20 +208,27 @@ function Invoke-WinUtilOfflineServicingTransaction {
     New-Item -Path $pendingManifestDirectory -ItemType Directory -Force | Out-Null
     $mounted = $false
     $committed = $false
+    $sessionStartHandledCleanup = $false
     try {
-        $staleMounts = @(Get-WindowsImage -Mounted -ErrorAction Stop | Where-Object { $_.Path -eq $MountPath })
-        foreach ($staleMount in $staleMounts) {
-            & $Log "Discarding stale image mount at '$MountPath'."
-            Dismount-WindowsImage -Path $MountPath -Discard -ErrorAction Stop | Out-Null
+        if ($Session) {
+            if ([string]$Session.State -ne 'Mounted' -or [string]$Session.MountPath -ne $MountPath -or [string]$Session.InstallImagePath -ne $InstallImagePath -or [int]$Session.ImageIndex -ne $ImageIndex) {
+                throw 'Offline servicing session does not match the selected copied image and index.'
+            }
+            if ([string]$Session.Inventory.SchemaVersion -ne '1.0' -or [string]$Session.Inventory.Source.ImagePath -ne $InstallImagePath -or [int]$Session.Inventory.Source.ImageIndex -ne $ImageIndex) {
+                throw 'Offline servicing session inventory does not match its copied image source contract.'
+            }
+            $mounted = $true
+            $before = $Session.Inventory
+        } else {
+            try {
+                $startedSession = Start-WinUtilOfflineServicingSession -InstallImagePath $InstallImagePath -ImageIndex $ImageIndex -MountPath $MountPath -ImageName $ImageName -SystemAppDiscovery $SystemAppDiscovery -Log $Log
+            } catch {
+                $sessionStartHandledCleanup = $true
+                throw
+            }
+            $mounted = $true
+            $before = $startedSession.Inventory
         }
-        if (Test-Path -LiteralPath $MountPath) { Remove-Item -LiteralPath $MountPath -Recurse -Force -ErrorAction Stop }
-        New-Item -Path $MountPath -ItemType Directory -Force | Out-Null
-
-        & $Log "Mounting install.wim index $ImageIndex once for offline servicing."
-        Mount-WindowsImage -ImagePath $InstallImagePath -Index $ImageIndex -Path $MountPath -ErrorAction Stop | Out-Null
-        $mounted = $true
-
-        $before = Get-WinUtilOfflineImageInventory -MountedImagePath $MountPath -SourceImagePath $InstallImagePath -ImageIndex $ImageIndex -ImageName $ImageName -SystemApp $SystemAppDiscovery
         Write-WinUtilOfflineJson -InputObject $before -Path (Join-Path $pendingManifestDirectory 'ImageInventory.before.json')
 
         foreach ($decision in @($ResolvedPlan.Decisions)) {
@@ -163,13 +259,14 @@ function Invoke-WinUtilOfflineServicingTransaction {
         Dismount-WindowsImage -Path $MountPath -Save -ErrorAction Stop | Out-Null
         $mounted = $false
         $committed = $true
+        if ($Session) { $Session.State = 'Committed' }
         foreach ($manifestName in 'ImageInventory.before.json', 'ImageInventory.after.json', 'ImageInventory.diff.json') {
             Move-Item -LiteralPath (Join-Path $pendingManifestDirectory $manifestName) -Destination (Join-Path $ManifestDirectory $manifestName) -Force
         }
         return [pscustomobject][ordered]@{ Before = $before; After = $after; Diff = $diff; ManifestDirectory = $ManifestDirectory }
     } finally {
         $requiresDiscard = $mounted
-        if (-not $committed -and -not $requiresDiscard) {
+        if (-not $committed -and -not $requiresDiscard -and -not $sessionStartHandledCleanup) {
             try {
                 $requiresDiscard = @(
                     Get-WindowsImage -Mounted -ErrorAction Stop | Where-Object { $_.Path -eq $MountPath }
@@ -179,8 +276,13 @@ function Invoke-WinUtilOfflineServicingTransaction {
             }
         }
         if ($requiresDiscard -and -not $committed) {
-            try { Dismount-WindowsImage -Path $MountPath -Discard -ErrorAction Stop | Out-Null }
-            catch { & $Log "Warning: failed to discard offline image mount at '$MountPath': $_" }
+            try {
+                Dismount-WindowsImage -Path $MountPath -Discard -ErrorAction Stop | Out-Null
+                if ($Session) { $Session.State = 'Discarded' }
+            } catch {
+                if ($Session) { $Session.State = 'Failed' }
+                & $Log "Warning: failed to discard offline image mount at '$MountPath': $_"
+            }
         }
         Remove-Item -LiteralPath $pendingManifestDirectory -Recurse -Force -ErrorAction SilentlyContinue
         if (Test-Path -LiteralPath $MountPath) { Remove-Item -LiteralPath $MountPath -Recurse -Force -ErrorAction SilentlyContinue }
