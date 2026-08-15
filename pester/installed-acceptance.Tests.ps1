@@ -11,7 +11,13 @@ BeforeAll {
                 param ($FilePath, $ArgumentList)
                 $identity = "$FilePath $($ArgumentList -join ' ')"
                 $commandFails = $FailCommand -and $identity -match $FailCommand
-                $evidence = if ($FilePath -eq 'reagentc.exe') { 'Windows RE status: Enabled' } else { "command=$identity" }
+                $evidence = if ($FilePath -eq 'reagentc.exe') {
+                    'Windows RE status: Enabled'
+                } elseif ($identity -match 'Microsoft\.Update\.Session') {
+                    'UpdateScan count=0 result=2'
+                } else {
+                    "command=$identity"
+                }
                 [pscustomobject]@{ Success = -not $commandFails; Evidence = $evidence; ExitCode = $(if ($commandFails) { 1 } else { 0 }) }
             }.GetNewClosure()
             Registry = {
@@ -54,7 +60,7 @@ Describe 'Installed acceptance harness' {
         Test-Path -LiteralPath ([IO.Path]::ChangeExtension($output, '.log')) | Should -BeTrue
         $document = Get-Content -LiteralPath $output -Raw | ConvertFrom-Json
         $document.SchemaVersion | Should -Be '1.0'
-        $document.HarnessVersion | Should -Be '1.1.0'
+        $document.HarnessVersion | Should -Be '1.2.0'
         $document.Results.Id | Should -Contain 'servicing.dism-checkhealth'
         $document.Results.Id | Should -Contain 'developer.directml'
         ($document.Results | Where-Object Id -eq 'servicing.dism-scanhealth').Status | Should -Be 'NotRun'
@@ -91,6 +97,27 @@ Describe 'Installed acceptance harness' {
 
         $result.ExitCode | Should -Be 1
         ($result.Document.Results | Where-Object Id -eq 'update.service.wuauserv').Status | Should -Be 'Fail'
+    }
+
+    It 'InstalledAcceptance_UpdateScanUnsuccessfulResult_PlantedNegative' -ForEach @(
+        @{ Evidence = 'UpdateScan count=0 result=4'; Label = 'failed-result' },
+        @{ Evidence = 'search completed without a result code'; Label = 'missing-result' }
+    ) {
+        $provider = New-AcceptanceProbeProvider
+        $baseCommand = $provider.Command
+        $provider.Command = {
+            param ($FilePath, $ArgumentList)
+            if (($ArgumentList -join ' ') -match 'Microsoft\.Update\.Session') {
+                [pscustomobject]@{ Success = $true; Evidence = $Evidence; ExitCode = 0 }
+            } else {
+                & $baseCommand $FilePath $ArgumentList
+            }
+        }.GetNewClosure()
+        $result = Invoke-WinUtilInstalledAcceptance -ExpectedState StockControl -Depth Quick -OutputPath (Join-Path $TestDrive "update-$Label.json") -ProbeProvider $provider
+
+        $result.ExitCode | Should -Be 1
+        ($result.Document.Results | Where-Object Id -eq 'update.scan').Status | Should -Be 'Fail'
+        $result.Document.Summary.RequiredFailures | Should -BeGreaterThan 0
     }
 
     It 'InstalledAcceptance_ReleaseMissingCommercialEvidenceIsNotRunAndBlocking' {

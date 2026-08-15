@@ -161,7 +161,7 @@ function Invoke-WinUtilInstalledAcceptance {
     foreach ($serviceName in @('wuauserv', 'BITS', 'UsoSvc', 'WaaSMedicSvc')) {
         Test-ServiceAvailability "update.service.$($serviceName.ToLowerInvariant())" 'WindowsUpdate' $true $serviceName $true
     }
-    Test-Command 'update.scan' 'WindowsUpdate' $true 'powershell.exe' @('-NoProfile', '-NonInteractive', '-Command', '$session = New-Object -ComObject Microsoft.Update.Session; $search = $session.CreateUpdateSearcher().Search(''IsInstalled=0 and IsHidden=0''); "UpdateScan count=$($search.Updates.Count) result=$($search.ResultCode)"')
+    Test-Command 'update.scan' 'WindowsUpdate' $true 'powershell.exe' @('-NoProfile', '-NonInteractive', '-Command', '$session = New-Object -ComObject Microsoft.Update.Session; $search = $session.CreateUpdateSearcher().Search(''IsInstalled=0 and IsHidden=0''); if ([int]$search.ResultCode -ne 2) { throw "Windows Update search returned result code $($search.ResultCode)." }; "UpdateScan count=$($search.Updates.Count) result=$($search.ResultCode)"') '(?m)^UpdateScan count=\d+ result=2$'
 
     foreach ($registration in @('Start', 'Explorer', 'Settings', 'WebView2')) {
         Test-Presence "core.$($registration.ToLowerInvariant())" 'CoreWindows' $true 'Registration' @($registration) $true
@@ -284,7 +284,7 @@ function Invoke-WinUtilInstalledAcceptance {
     $failedRequired = @($results | Where-Object { $_.Required -and $_.Status -ne 'Pass' })
     $document = [pscustomobject][ordered]@{
         SchemaVersion = '1.0'
-        HarnessVersion = '1.1.0'
+        HarnessVersion = '1.2.0'
         TimestampUtc = [DateTime]::UtcNow.ToString('o')
         ExpectedState = $ExpectedState
         Depth = $Depth
