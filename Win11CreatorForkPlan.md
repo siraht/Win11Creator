@@ -14,7 +14,7 @@
 
 This compact record is the project owner's requested source for progress, decisions, rationale, lessons, and verification gaps. Update it when a change affects implementation direction or closes a plan item; do not duplicate ordinary commit history or test output here.
 
-**Current status:** Active — the policy-driven Analyze-to-Build path, typed offline/setup actions, two-mode UAC choice, x64 25H2 source gate, source-format preparation, atomic one-mount transaction, artifact publication, and installed-state harness are integrated; live Windows execution and component-specific installed-state proof remain in progress.
+**Current status:** Active — the policy-driven Analyze-to-Build path, typed offline/setup actions, two-mode UAC choice, x64 25H2 source gate, source-format preparation, atomic one-mount transaction, artifact publication, and installed-state harness are integrated. Lean DAW now deliberately blocks instead of routing Defender through generic package servicing; its dedicated Defender consumer plus live Windows/component proof remain in progress.
 
 **Pinned baseline**
 
@@ -48,6 +48,7 @@ This compact record is the project owner's requested source for progress, decisi
 * Enumerate mounted `Windows\\SystemApps` directories through the inventory boundary, but keep every unmatched discovery `Manual`. Intentional multi-package destructive wildcards require an explicit `allowMultiple` declaration; otherwise high-/Expert-risk ambiguity still blocks resolution.
 * Publish the resolved plan, before/after inventories, diff, normal build log, and SHA-256 records only after output creation succeeds. ISO evidence uses a file hash; USB evidence uses a deterministic pre-publication content-tree hash so the evidence directory cannot hash itself.
 * Run release acceptance only on an explicitly labeled Windows x64 self-hosted validation machine. Required checks that cannot run, including missing commercial DAW hooks, are blocking `NotRun` results rather than synthetic passes.
+* Treat Defender as a privileged operation with its own action-bundle channel. Until a dedicated offline consumer proves it handled the resolved image targets, Defender removal makes the bundle not ready and cannot fall through generic feature/package/service servicing. OneDrive uses only the built-in `System32\\OneDriveSetup.exe /uninstall` command at `specialize` in addition to its resolved offline targets.
 
 **Lessons and open verification gaps**
 
@@ -62,6 +63,7 @@ This compact record is the project owner's requested source for progress, decisi
 * The broad upstream first-logon helper remains as an uncalled legacy definition, but the media builder no longer invokes it. Tests prove Default injects no blanket post-install script and Lean's generated setup script contains only exact declared task disables; Windows Setup execution still needs VM proof.
 * Mounted SystemApp discovery and the build-26200 support gate are production-shaped and planted-negative tested, but only a real official 25H2 image can establish the actual Search/AI/WebExperience identities and dependency truth.
 * Artifact publication and the installed-acceptance harness now make missing or invalid evidence fail closed. Their Linux/injected-boundary tests do not establish ISO bootability, Windows servicing health, interactive shell behavior, update success, or DAW/developer compatibility.
+* A production-path audit found that a declared high-risk action can otherwise look complete merely because generic targets exist. Privileged components therefore need an explicit consumer/readiness contract; fail-closed status is correct but does not satisfy the removal requirement.
 
 **Progress log**
 
@@ -84,6 +86,8 @@ This compact record is the project owner's requested source for progress, decisi
 * `2026-08-15` — Integrated intentional multi-match declarations (`7ea477b`), mounted SystemApp discovery (`378f767`/`8b347e5`), the complete-image x64 25H2 build-26200 gate (`146ce56`), and mount-verification cleanup hardening (`004489e`). Focused source/inventory/live/UI checks discovered 80 tests: 78 passed, 0 failed, 2 Windows-PowerShell skips.
 * `2026-08-15` — Integrated versioned transaction manifests and atomic ISO/USB evidence publication in `7e913c6` through `f494bb2`, followed by the installed Windows acceptance harness and self-hosted release gate in `e7beec5` through `5d975f1`. The combined focused run discovered 136 tests: 134 passed, 0 failed, 2 Windows-PowerShell skips.
 * `2026-08-15` — Ran the complete Linux suite after source-boundary integration: 703 discovered, 669 passed, 32 failed, 2 skipped. The 32 failures remain in the pre-existing Windows-only C-drive, WPF dispatcher, relative-URI, ACL, registry, and service-command categories; all new source, policy, handoff, and support tests passed.
+* `2026-08-15` — Hardened publication in `d09a69a`/`f4c84fb`: empty output/log inputs reject, USB copy accepts only documented Robocopy success codes `0`–`7`, and a fatal/malformed copy cannot reach evidence publication. The output/USB regression run discovered 54 tests: 52 passed, 0 failed, 2 Windows-PowerShell skips.
+* `2026-08-15` — Integrated privileged-operation commits `051adbd` through `920b966`. Defender now produces a blocking `SecurityOperations` intent instead of a false-ready generic removal; OneDrive produces an exact allowlisted setup-time uninstaller intent; Copilot's AppX and policy decisions are jointly tested; Search SystemApp directory deletion is explicitly rejected. The component slice passed 86 focused tests, with no live Windows claim.
 
 ---
 
