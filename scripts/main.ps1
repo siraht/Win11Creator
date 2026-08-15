@@ -134,6 +134,26 @@ Initialize-WinUtilTabContent -TabName "Install"
 
 $xaml.SelectNodes("//*[@Name]") | ForEach-Object {$sync["$("$($psitem.Name)")"] = $sync["Form"].FindName($psitem.Name)}
 
+Initialize-WinUtilComponentPolicyUI
+
+$sync.WPFWin11ISOProfileComboBox.Add_SelectionChanged({
+    if ($sync.WPFWin11ISOProfileComboBox.SelectedValue) {
+        Update-WinUtilComponentPolicyUI -SelectedProfileId ([string]$sync.WPFWin11ISOProfileComboBox.SelectedValue)
+    }
+})
+
+$refreshAdvancedPackageSelector = {
+    if ($sync.Win11ISOImageInventory) {
+        Set-WinUtilAdvancedPackageSelectorUI `
+            -ImageInventory $sync.Win11ISOImageInventory `
+            -ResolvedPlan $sync.Win11ISOResolvedPlan
+    } else {
+        $sync.WPFWin11ISOExpertWarning.Visibility = if ($sync.WPFWin11ISOExpertMode.IsChecked) { 'Visible' } else { 'Collapsed' }
+    }
+}
+$sync.WPFWin11ISOExpertMode.Add_Checked($refreshAdvancedPackageSelector)
+$sync.WPFWin11ISOExpertMode.Add_Unchecked($refreshAdvancedPackageSelector)
+
 $sync.ChocoRadioButton.Add_Checked({
     $sync.preferences.packagemanager = "Choco"
 })

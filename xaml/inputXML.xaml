@@ -1776,6 +1776,83 @@
                                     and the result will be repackaged. This process may take several minutes
                                     depending on your hardware.
                                 </TextBlock>
+                                <Border Style="{StaticResource BorderStyle}" Margin="0,0,0,12" Padding="12">
+                                    <StackPanel>
+                                        <StackPanel.Resources>
+                                            <DataTemplate x:Key="Win11ISOComponentPolicyItemTemplate">
+                                                <Grid Margin="4,3">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="2*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock Grid.Column="0" Text="{Binding Name}" ToolTip="{Binding Rationale}" TextWrapping="Wrap"
+                                                               Foreground="{DynamicResource MainForegroundColor}"/>
+                                                    <TextBlock Grid.Column="1" Text="{Binding Action}" Margin="12,0" FontWeight="SemiBold"
+                                                               Foreground="{DynamicResource MainForegroundColor}"/>
+                                                    <TextBlock Grid.Column="2" Text="{Binding Risk}" ToolTip="{Binding Consequences}"
+                                                               Foreground="{DynamicResource MainForegroundColor}"/>
+                                                </Grid>
+                                            </DataTemplate>
+                                            <DataTemplate x:Key="Win11ISOAdvancedPackageItemTemplate">
+                                                <Grid Margin="4,4">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="2*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="3*"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <CheckBox Grid.Column="0" IsChecked="{Binding IsSelected}" IsEnabled="{Binding CanSelect}"
+                                                              Margin="0,0,8,0" ToolTip="Select this inventory item for a manual override."/>
+                                                    <TextBlock Grid.Column="1" Text="{Binding Kind}" Margin="0,0,10,0"
+                                                               Foreground="{DynamicResource MainForegroundColor}"/>
+                                                    <TextBlock Grid.Column="2" Text="{Binding Identity}" TextWrapping="Wrap"
+                                                               Foreground="{DynamicResource MainForegroundColor}"/>
+                                                    <TextBlock Grid.Column="3" Text="{Binding Recommendation}" Margin="10,0" FontWeight="SemiBold"
+                                                               Foreground="{DynamicResource MainForegroundColor}"/>
+                                                    <TextBlock Grid.Column="4" Text="{Binding Rationale}" TextWrapping="Wrap"
+                                                               Foreground="{DynamicResource MainForegroundColor}"/>
+                                                </Grid>
+                                            </DataTemplate>
+                                        </StackPanel.Resources>
+
+                                        <TextBlock Text="Configuration profile" FontWeight="Bold"
+                                                   Foreground="{DynamicResource MainForegroundColor}"/>
+                                        <ComboBox Name="WPFWin11ISOProfileComboBox" Margin="0,6,0,10" MinWidth="220"
+                                                  HorizontalAlignment="Left"/>
+
+                                        <UniformGrid Columns="4" Margin="0,0,0,10">
+                                            <StackPanel><TextBlock Text="Remove" FontWeight="Bold" Foreground="{DynamicResource MainForegroundColor}"/><TextBlock Name="WPFWin11ISOSummaryRemove" Text="0" Foreground="{DynamicResource MainForegroundColor}"/></StackPanel>
+                                            <StackPanel><TextBlock Text="Disable" FontWeight="Bold" Foreground="{DynamicResource MainForegroundColor}"/><TextBlock Name="WPFWin11ISOSummaryDisable" Text="0" Foreground="{DynamicResource MainForegroundColor}"/></StackPanel>
+                                            <StackPanel><TextBlock Text="Protected" FontWeight="Bold" Foreground="{DynamicResource MainForegroundColor}"/><TextBlock Name="WPFWin11ISOSummaryProtected" Text="0" Foreground="{DynamicResource MainForegroundColor}"/></StackPanel>
+                                            <StackPanel><TextBlock Text="Estimated risk" FontWeight="Bold" Foreground="{DynamicResource MainForegroundColor}"/><TextBlock Name="WPFWin11ISOSummaryRisk" Text="SAFE" Foreground="{DynamicResource MainForegroundColor}"/></StackPanel>
+                                        </UniformGrid>
+
+                                        <ScrollViewer MaxHeight="430" VerticalScrollBarVisibility="Auto">
+                                            <StackPanel>
+                                                <Expander Header="Apps" Margin="0,2"><ItemsControl Name="WPFWin11ISOAppsItems" ItemTemplate="{StaticResource Win11ISOComponentPolicyItemTemplate}"/></Expander>
+                                                <Expander Header="Windows Components" Margin="0,2"><ItemsControl Name="WPFWin11ISOWindowsComponentsItems" ItemTemplate="{StaticResource Win11ISOComponentPolicyItemTemplate}"/></Expander>
+                                                <Expander Header="Features &amp; Capabilities" Margin="0,2"><ItemsControl Name="WPFWin11ISOFeaturesItems" ItemTemplate="{StaticResource Win11ISOComponentPolicyItemTemplate}"/></Expander>
+                                                <Expander Header="Privacy / Runtime" Margin="0,2"><ItemsControl Name="WPFWin11ISOPrivacyItems" ItemTemplate="{StaticResource Win11ISOComponentPolicyItemTemplate}"/></Expander>
+                                                <Expander Header="Developer / Virtualization" Margin="0,2"><ItemsControl Name="WPFWin11ISODeveloperItems" ItemTemplate="{StaticResource Win11ISOComponentPolicyItemTemplate}"/></Expander>
+                                                <Expander Header="Advanced Package Selector" Margin="0,8,0,2">
+                                                    <StackPanel>
+                                                        <CheckBox Name="WPFWin11ISOExpertMode" Content="Expert mode" Margin="4"
+                                                                  Foreground="{DynamicResource MainForegroundColor}"/>
+                                                        <TextBlock Name="WPFWin11ISOExpertWarning" Visibility="Collapsed" Margin="4" TextWrapping="Wrap"
+                                                                   Foreground="OrangeRed"
+                                                                   Text="Expert mode can override protected recommendations. Review dependencies and risk before selecting a protected component."/>
+                                                        <TextBlock Margin="4" TextWrapping="Wrap" Foreground="{DynamicResource MainForegroundColor}"
+                                                                   Text="Inventory rows appear after an ImageInventory and resolved plan are supplied. Unknown rows remain unselected."/>
+                                                        <ItemsControl Name="WPFWin11ISOAdvancedPackageItems"
+                                                                      ItemTemplate="{StaticResource Win11ISOAdvancedPackageItemTemplate}"/>
+                                                    </StackPanel>
+                                                </Expander>
+                                            </StackPanel>
+                                        </ScrollViewer>
+                                    </StackPanel>
+                                </Border>
                                 <Button Name="WPFWin11ISOModifyButton"
                                         Content="Run Windows ISO Modification and Creator"
                                         HorizontalAlignment="Left"
