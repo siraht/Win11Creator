@@ -28,6 +28,7 @@ function Resolve-WinUtilComponentPolicyPlan {
     $operationConflicts = [System.Collections.Generic.List[object]]::new()
     $registryActions = [System.Collections.Generic.List[object]]::new()
     $setupActions = [System.Collections.Generic.List[object]]::new()
+    $securityOperations = [System.Collections.Generic.List[object]]::new()
 
     foreach ($component in @($Catalog.components)) {
         $componentId = [string]$component.id
@@ -66,7 +67,7 @@ function Resolve-WinUtilComponentPolicyPlan {
         })
 
         if ($selectedAction -in @('remove', 'disable')) {
-            foreach ($target in @($component.targets | Where-Object kind -in @('registry', 'service', 'scheduled-task'))) {
+            foreach ($target in @($component.targets | Where-Object kind -in @('registry', 'service', 'scheduled-task', 'setup', 'security'))) {
                 $matchingOperations = @($target.operations | Where-Object onAction -eq $selectedAction)
                 if ($matchingOperations.Count -eq 0) {
                     $operationConflicts.Add([pscustomobject]@{
@@ -121,6 +122,29 @@ function Resolve-WinUtilComponentPolicyPlan {
                                 Executable = 'schtasks.exe'
                                 Arguments = @('/Change', '/TN', [string]$operation.taskPath, '/Disable')
                                 SourceComponentId = $componentId
+                            })
+                        }
+                        'run-onedrive-uninstaller-at-setup' {
+                            $setupActions.Add([pscustomobject]@{
+                                Mechanism = 'onedrive-built-in-uninstaller'
+                                Phase = 'specialize'
+                                Executable = 'OneDriveSetup.exe'
+                                Arguments = @('/uninstall')
+                                SourceComponentId = $componentId
+                            })
+                        }
+                        'remove-defender-offline' {
+                            $securityOperations.Add([pscustomobject]@{
+                                Operation = 'RemoveDefenderOffline'
+                                SourceComponentId = $componentId
+                                Status = 'BlockedNoValidatedConsumer'
+                            })
+                            $operationConflicts.Add([pscustomobject]@{
+                                ComponentId = $componentId
+                                RelatedComponentId = $componentId
+                                Severity = 'unsupported-operation'
+                                Reason = 'Defender removal requires a dedicated validated offline consumer; ordinary AppX, feature, package, or service removal is not accepted.'
+                                IsBlocking = $true
                             })
                         }
                         default {
@@ -222,6 +246,7 @@ function Resolve-WinUtilComponentPolicyPlan {
         ResolvedPlan = $resolvedPlan
         RegistryActions = $deduplicatedRegistryActions
         SetupActions = $deduplicatedSetupActions
+        SecurityOperations = @($securityOperations)
     }
 
     [pscustomobject]@{

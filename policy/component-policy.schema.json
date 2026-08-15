@@ -76,6 +76,24 @@
         },
         {
           "type": "object",
+          "required": ["operation", "onAction"],
+          "properties": {
+            "operation": { "const": "run-onedrive-uninstaller-at-setup" },
+            "onAction": { "const": "remove" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["operation", "onAction"],
+          "properties": {
+            "operation": { "const": "remove-defender-offline" },
+            "onAction": { "const": "remove" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
           "required": ["operation", "onAction", "serviceName", "startupType"],
           "properties": {
             "operation": { "const": "disable-service" },
@@ -102,7 +120,7 @@
       "required": ["kind", "match", "matchType"],
       "properties": {
         "kind": {
-          "enum": ["appx", "package", "capability", "feature", "registry", "service", "scheduled-task"]
+          "enum": ["appx", "package", "capability", "feature", "registry", "service", "scheduled-task", "setup", "security"]
         },
         "match": { "type": "string", "minLength": 1 },
         "matchType": { "$ref": "#/$defs/matchType" },

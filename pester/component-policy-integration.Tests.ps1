@@ -81,7 +81,7 @@ Describe 'Component policy plan integration' {
 
     It 'regenerates an Expert inventory override with retained protection evidence' {
         $override = @([pscustomobject]@{ Kind = 'Feature'; Identity = 'ServicesForNFS-ClientOnly'; Action = 'Remove'; Reason = 'Expert selection.' })
-        $result = Resolve-WinUtilComponentPolicyPlan -Inventory $script:inventory -Catalog $script:catalog -Profile $script:leanProfile -ManualOverride $override -OfflineSystemSelect ([pscustomobject]@{ Current = 1 }) -ExpertMode
+        $result = Resolve-WinUtilComponentPolicyPlan -Inventory $script:inventory -Catalog $script:catalog -Profile $script:leanProfile -ActionOverrides @{ defender = 'keep' } -ManualOverride $override -OfflineSystemSelect ([pscustomobject]@{ Current = 1 }) -ExpertMode
 
         ($result.ResolvedPlan.Decisions | Where-Object Identity -eq 'ServicesForNFS-ClientOnly').Action | Should -Be 'Remove'
         $result.Safety.IsAllowed | Should -BeTrue

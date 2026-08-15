@@ -26,7 +26,7 @@ Describe 'Typed component action bundle' {
     }
 
     It 'ActionBundle_LeanCoverageProducesExplicitRegistryServiceAndTaskIntents' {
-        $result = Resolve-WinUtilComponentPolicyPlan -Inventory $script:inventory -Catalog $script:catalog -Profile $script:leanProfile -OfflineSystemSelect ([pscustomobject]@{ Current = 1 }) -ExpertMode
+        $result = Resolve-WinUtilComponentPolicyPlan -Inventory $script:inventory -Catalog $script:catalog -Profile $script:leanProfile -ActionOverrides @{ defender = 'keep' } -OfflineSystemSelect ([pscustomobject]@{ Current = 1 }) -ExpertMode
         $bundle = $result.ActionBundle
 
         $bundle.SchemaVersion | Should -Be '1.0'
@@ -42,10 +42,11 @@ Describe 'Typed component action bundle' {
             $_.Hive -eq 'SYSTEM' -and $_.Key -eq 'ControlSet001\Services\DiagTrack' -and
             $_.Name -eq 'Start' -and $_.Type -eq 'REG_DWORD' -and $_.Value -eq 4
         } | Should -HaveCount 1
-        $bundle.SetupActions | Should -HaveCount 3
+        $bundle.SetupActions | Should -HaveCount 4
+        $bundle.SetupActions.Mechanism | Should -Contain 'onedrive-built-in-uninstaller'
         $bundle.SetupActions.Mechanism | Should -Not -Contain 'taskcache'
         ($bundle.SetupActions | ConvertTo-Json -Depth 5) | Should -Not -Match 'delete|TaskCache'
-        foreach ($setupAction in $bundle.SetupActions) {
+        foreach ($setupAction in @($bundle.SetupActions | Where-Object Mechanism -eq 'schtasks-change-disable')) {
             $setupAction.Executable | Should -Be 'schtasks.exe'
             $setupAction.Arguments[0] | Should -Be '/Change'
             $setupAction.Arguments[-1] | Should -Be '/Disable'
@@ -96,14 +97,15 @@ Describe 'Typed component action bundle' {
         $result = Resolve-WinUtilComponentPolicyPlan -Inventory $script:inventory -Catalog $duplicateCatalog -Profile $script:leanProfile -OfflineSystemSelect ([pscustomobject]@{ Current = 1 }) -ExpertMode
 
         $result.ActionBundle.RegistryActions | Where-Object Name -eq 'DisableSearchBoxSuggestions' | Should -HaveCount 1
-        $result.ActionBundle.SetupActions | Should -HaveCount 3
+        $result.ActionBundle.SetupActions | Should -HaveCount 4
     }
 
     It 'ActionBundle_SchemaAndProfilesExposeTypedDeveloperChoices' {
         $schema = Get-Content -LiteralPath (Join-Path $script:repoRoot 'policy/component-policy.schema.json') -Raw | ConvertFrom-Json
-        @($schema.'$defs'.operation.oneOf.properties.operation.const) | Should -Be @(
-            'set-registry-value', 'disable-service', 'disable-scheduled-task-at-setup'
-        )
+        $operationNames = @($schema.'$defs'.operation.oneOf.properties.operation.const)
+        foreach ($operationName in 'set-registry-value', 'disable-service', 'disable-scheduled-task-at-setup', 'run-onedrive-uninstaller-at-setup', 'remove-defender-offline') {
+            $operationNames | Should -Contain $operationName
+        }
         $script:defaultProfile.actions.'openssh-client' | Should -Be 'keep'
         $script:defaultProfile.actions.'openssh-server' | Should -Be 'keep'
         $script:leanProfile.actions.'openssh-client' | Should -Be 'protected'

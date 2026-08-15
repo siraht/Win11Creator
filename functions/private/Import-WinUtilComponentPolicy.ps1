@@ -17,7 +17,7 @@ function Test-WinUtilComponentPolicy {
     $validationErrors = New-Object System.Collections.Generic.List[string]
     $allowedActions = @("keep", "remove", "disable", "manual", "protected")
     $allowedRisks = @("safe", "moderate", "high", "expert")
-    $allowedTargetKinds = @("appx", "package", "capability", "feature", "registry", "service", "scheduled-task")
+    $allowedTargetKinds = @("appx", "package", "capability", "feature", "registry", "service", "scheduled-task", "setup", "security")
     $allowedMatchTypes = @("exact", "wildcard", "version-insensitive")
     $allowedConflictSeverities = @("warning", "likely-breakage", "forbidden-unless-expert")
     $allowedRegistryHives = @("SOFTWARE", "SYSTEM", "DEFAULT")
@@ -114,6 +114,16 @@ function Test-WinUtilComponentPolicy {
                             }
                             if ([string]$operation.taskPath -notmatch '^\\Microsoft\\Windows\\[^*?]+$') {
                                 $validationErrors.Add("Component '$componentId' scheduled-task operation requires an exact Microsoft task path.")
+                            }
+                        }
+                        "run-onedrive-uninstaller-at-setup" {
+                            if ($target.kind -ne "setup" -or $target.matchType -ne "exact" -or $target.match -ne "OneDriveSetup.exe") {
+                                $validationErrors.Add("Component '$componentId' OneDrive setup operation requires the exact OneDriveSetup.exe target.")
+                            }
+                        }
+                        "remove-defender-offline" {
+                            if ($target.kind -ne "security" -or $target.matchType -ne "exact" -or $target.match -ne "microsoft-defender-platform") {
+                                $validationErrors.Add("Component '$componentId' Defender operation requires the exact microsoft-defender-platform security target.")
                             }
                         }
                         default {

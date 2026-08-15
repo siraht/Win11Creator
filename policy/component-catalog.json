@@ -183,6 +183,17 @@
       "risk": "expert",
       "targets": [
         {
+          "kind": "security",
+          "match": "microsoft-defender-platform",
+          "matchType": "exact",
+          "operations": [
+            {
+              "operation": "remove-defender-offline",
+              "onAction": "remove"
+            }
+          ]
+        },
+        {
           "kind": "feature",
           "match": "Windows-Defender-*",
           "matchType": "wildcard"
@@ -403,6 +414,17 @@
           "kind": "appx",
           "match": "Microsoft.OneDriveSync",
           "matchType": "exact"
+        },
+        {
+          "kind": "setup",
+          "match": "OneDriveSetup.exe",
+          "matchType": "exact",
+          "operations": [
+            {
+              "operation": "run-onedrive-uninstaller-at-setup",
+              "onAction": "remove"
+            }
+          ]
         }
       ],
       "protects": [],
