@@ -483,6 +483,7 @@ Describe "XAML and sync wiring" {
             "Win11ISOOfflineSession",
             "Win11ISOComponentActionOverrides",
             "Win11ISOUpdatingExclusiveChoices",
+            "Win11ISOUpdatingAdvancedSelector",
             "AppCategoryChips",
             "SelectedAppCategories",
             "AppCategoryAutoExpanded"
