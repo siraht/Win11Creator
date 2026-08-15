@@ -19,6 +19,9 @@ function Invoke-WinUtilISOBrowse {
         Stop-WinUtilOfflineServicingSession -Session $sync['Win11ISOOfflineSession'] -Log { param($message) Write-WinUtilISOLog $message }
         $sync['Win11ISOOfflineSession'] = $null
     }
+    $sync['Win11ISOImageSupport'] = $null
+    $sync['Win11ISOImageInfo'] = $null
+    $sync['Win11ISOWimPath'] = $null
     Add-Type -AssemblyName System.Windows.Forms
 
     $dlg = [System.Windows.Forms.OpenFileDialog]::new()
@@ -56,6 +59,9 @@ function Invoke-WinUtilISOMountAndVerify {
     $sync["WPFWin11ISOMountButton"].IsEnabled = $false
     $sync["WPFWin11ISOAnalyzeButton"].IsEnabled = $false
     $sync["WPFWin11ISOModifyButton"].IsEnabled = $false
+    $sync["Win11ISOImageSupport"] = $null
+    $sync["Win11ISOImageInfo"] = $null
+    $sync["Win11ISOWimPath"] = $null
     $sync["Win11ISOProcessRunning"] = $true
 
     Invoke-WPFRunspace -ParameterList @(,('isoPath', $isoPath)) -ScriptBlock {
@@ -90,20 +96,25 @@ function Invoke-WinUtilISOMountAndVerify {
             $activeWim = if (Test-Path $wimPath) { $wimPath } else { $esdPath }
 
             Set-WinUtilTweaksProgressIndicator -Visible $true -Label "Reading image metadata..." -Percent 55
-            $imageInfo = Get-WindowsImage -ImagePath $activeWim | Select-Object ImageIndex, ImageName
+            $imageInfo = @(Get-WindowsImage -ImagePath $activeWim)
+            $support = Test-WinUtilWindowsImageSupport -ImageMetadata $imageInfo
 
-            if (-not ($imageInfo | Where-Object { $_.ImageName -match "Windows 11" })) {
+            if (-not $support.IsSupported) {
                 Dismount-DiskImage -ImagePath $isoPath
-                Write-WinUtilISOLog "ERROR: No 'Windows 11' edition found in the image."
+                $sync["Win11ISOImageSupport"] = $support
+                $sync["Win11ISOImageInfo"] = $null
+                $sync["Win11ISOWimPath"] = $null
+                Write-WinUtilISOLog "ERROR: Unsupported Windows image: $($support.Reason)"
                 Invoke-WPFUIThread {
                     [System.Windows.MessageBox]::Show(
-                        "No Windows 11 edition was found in this ISO.`n`nOnly official Windows 11 ISOs are supported.",
-                        "Not a Windows 11 ISO", "OK", "Error")
+                        "This image is not supported:`n`n$($support.Reason)`n`nUse an official Windows 11 x64 25H2 ISO (build family 26200).",
+                        "Unsupported Windows Image", "OK", "Error")
                 }
                 return
             }
 
-            $sync["Win11ISOImageInfo"] = $imageInfo
+            $sync["Win11ISOImageSupport"] = $support
+            $sync["Win11ISOImageInfo"] = $support.Editions
             $sync["Win11ISODriveLetter"] = $driveLetter
             $sync["Win11ISOWimPath"]     = $activeWim
             $sync["Win11ISOImagePath"]   = $isoPath
@@ -111,7 +122,7 @@ function Invoke-WinUtilISOMountAndVerify {
             Invoke-WPFUIThread {
                 $sync["WPFWin11ISOMountDriveLetter"].Text = "Mounted at: $driveLetter   |   Image file: $(Split-Path $activeWim -Leaf)"
                 $sync["WPFWin11ISOEditionComboBox"].Items.Clear()
-                foreach ($img in $imageInfo) {
+                foreach ($img in $support.Editions) {
                     [void]$sync["WPFWin11ISOEditionComboBox"].Items.Add("$($img.ImageIndex): $($img.ImageName)")
                 }
                 if ($sync["WPFWin11ISOEditionComboBox"].Items.Count -gt 0) {
@@ -130,7 +141,7 @@ function Invoke-WinUtilISOMountAndVerify {
             }
 
             Set-WinUtilTweaksProgressIndicator -Visible $true -Label "ISO verified" -Percent 100
-            Write-WinUtilISOLog "ISO verified OK.  Editions found: $($imageInfo.Count)"
+            Write-WinUtilISOLog "ISO verified OK. $($support.Reason)"
         } catch {
             $errorMessage = $_
             Write-WinUtilISOLog "ERROR during mount/verify: $errorMessage"
@@ -145,7 +156,9 @@ function Invoke-WinUtilISOMountAndVerify {
             Invoke-WPFUIThread {
                 $sync["WPFWin11ISOBrowseButton"].IsEnabled = $true
                 $sync["WPFWin11ISOMountButton"].IsEnabled = $true
-                if ($sync["Win11ISOWimPath"]) { $sync["WPFWin11ISOAnalyzeButton"].IsEnabled = $true }
+                $sync["WPFWin11ISOAnalyzeButton"].IsEnabled = (
+                    $sync["Win11ISOWimPath"] -and $sync["Win11ISOImageSupport"].IsSupported -eq $true
+                )
                 $sync["Win11ISOProcessRunning"] = $false
             }
         }
@@ -153,6 +166,10 @@ function Invoke-WinUtilISOMountAndVerify {
 }
 
 function Invoke-WinUtilISOAnalyze {
+    if (-not $sync['Win11ISOImageSupport'] -or $sync['Win11ISOImageSupport'].IsSupported -ne $true) {
+        [System.Windows.MessageBox]::Show('Analyze is blocked until a supported Windows 11 x64 25H2 image is verified.', 'Unsupported Windows Image', 'OK', 'Error')
+        return
+    }
     $sourceImagePath = [string]$sync['Win11ISOWimPath']
     if ([IO.Path]::GetExtension($sourceImagePath) -notin @('.wim', '.esd')) {
         [System.Windows.MessageBox]::Show('Analyze requires sources\install.wim or sources\install.esd.', 'Unsupported Image Format', 'OK', 'Error')
