@@ -33,6 +33,9 @@ function Invoke-WinUtilISOScript {
         [string]$InstallEditionId = "",
         [string]$InstallImagePath = "",
         [int]$InstallImageIndex = 1,
+        $ResolvedPlan,
+        [AllowEmptyCollection()][object[]]$RegistryAction = @(),
+        [string]$ManifestDirectory = '',
         [scriptblock]$Log = { param($m) Write-Output $m }
     )
 
@@ -41,6 +44,9 @@ function Invoke-WinUtilISOScript {
             [Parameter(Mandatory)][string]$ContentRoot,
             [Parameter(Mandatory)][string]$InstallImagePath,
             [Parameter(Mandatory)][int]$InstallImageIndex,
+            $ResolvedPlan,
+            [object[]]$RegistryAction = @(),
+            [string]$ManifestDirectory = '',
             [scriptblock]$Logger
         )
 
@@ -148,14 +154,14 @@ function Invoke-WinUtilISOScript {
             throw 'Current-system driver injection requires a valid install.wim image index.'
         }
 
-        $driverExportRoot = Join-Path $env:TEMP "WinUtil_DriverExport_$(Get-Date -Format 'yyyyMMdd_HHmmss')_$(([guid]::NewGuid()).ToString('N').Substring(0, 8))"
+        $driverExportRoot = Join-Path ([IO.Path]::GetTempPath()) "WinUtil_DriverExport_$(Get-Date -Format 'yyyyMMdd_HHmmss')_$(([guid]::NewGuid()).ToString('N').Substring(0, 8))"
         $mountDir = Join-Path (Split-Path -Path $ContentRoot -Parent) 'wim_mount'
         New-Item -Path $driverExportRoot -ItemType Directory -Force | Out-Null
         $imageMounted = $false
 
         try {
             & $Logger "Exporting current system drivers before modifying install.wim..."
-            $dismLog = Join-Path $env:TEMP "WinUtil_DismDriverExport_$(Get-Date -Format 'yyyyMMdd_HHmmss').log"
+            $dismLog = Join-Path ([IO.Path]::GetTempPath()) "WinUtil_DismDriverExport_$(Get-Date -Format 'yyyyMMdd_HHmmss').log"
             $dismProcess = Start-Process -FilePath "dism.exe" -ArgumentList "/online /export-driver /destination:`"$driverExportRoot`" /LogPath:`"$dismLog`"" -Wait -NoNewWindow -PassThru
             if ($dismProcess.ExitCode -ne 0) {
                 throw "dism.exe driver export failed with exit code $($dismProcess.ExitCode)."
@@ -197,17 +203,24 @@ function Invoke-WinUtilISOScript {
             Assert-WinUtilISOWimMetadata -Before $metadataBefore
 
             Set-ItemProperty -LiteralPath $InstallImagePath -Name IsReadOnly -Value $false
-            New-Item -Path $mountDir -ItemType Directory -Force | Out-Null
-            & $Logger "Mounting install.wim index $InstallImageIndex once for driver injection..."
-            Invoke-WinUtilISODism -Arguments @('/English', '/Mount-Image', "/ImageFile:$InstallImagePath", "/Index:$InstallImageIndex", "/MountDir:$mountDir") -Operation 'mount' | Out-Null
-            $imageMounted = $true
+            if ($ResolvedPlan) {
+                if ([string]::IsNullOrWhiteSpace($ManifestDirectory)) {
+                    $ManifestDirectory = Join-Path $ContentRoot 'WinUtil-Manifests'
+                }
+                Invoke-WinUtilOfflineServicingTransaction -InstallImagePath $InstallImagePath -ImageIndex $InstallImageIndex -ResolvedPlan $ResolvedPlan -MountPath $mountDir -ManifestDirectory $ManifestDirectory -DriverDirectory $driverExportRoot -RegistryAction $RegistryAction -Log $Logger | Out-Null
+            } else {
+                New-Item -Path $mountDir -ItemType Directory -Force | Out-Null
+                & $Logger "Mounting install.wim index $InstallImageIndex once for driver injection..."
+                Invoke-WinUtilISODism -Arguments @('/English', '/Mount-Image', "/ImageFile:$InstallImagePath", "/Index:$InstallImageIndex", "/MountDir:$mountDir") -Operation 'mount' | Out-Null
+                $imageMounted = $true
 
-            & $Logger "Adding all exported drivers to the selected Windows image in one DISM operation..."
-            Invoke-WinUtilISODism -Arguments @('/English', "/Image:$mountDir", '/Add-Driver', "/Driver:$driverExportRoot", '/Recurse') -Operation 'add-driver' | Out-Null
+                & $Logger "Adding all exported drivers to the selected Windows image in one DISM operation..."
+                Invoke-WinUtilISODism -Arguments @('/English', "/Image:$mountDir", '/Add-Driver', "/Driver:$driverExportRoot", '/Recurse') -Operation 'add-driver' | Out-Null
 
-            & $Logger 'Committing the driver-only install.wim change...'
-            Invoke-WinUtilISODism -Arguments @('/English', '/Unmount-Image', "/MountDir:$mountDir", '/Commit') -Operation 'commit' | Out-Null
-            $imageMounted = $false
+                & $Logger 'Committing the driver-only install.wim change...'
+                Invoke-WinUtilISODism -Arguments @('/English', '/Unmount-Image', "/MountDir:$mountDir", '/Commit') -Operation 'commit' | Out-Null
+                $imageMounted = $false
+            }
 
             $metadataAfter = Get-WinUtilISOWimMetadata -ImagePath $InstallImagePath -Index $InstallImageIndex
             Assert-WinUtilISOWimMetadata -Before $metadataBefore -After $metadataAfter
@@ -535,6 +548,12 @@ $appxList
     Write-WinUtilISOEditionConfig -ContentRoot $ISOContentsDir -EditionId $InstallEditionId -Logger $Log
 
     if ($InjectCurrentSystemDrivers) {
-        Add-WinUtilISOStagedDrivers -ContentRoot $ISOContentsDir -Logger $Log -InstallImagePath $InstallImagePath -InstallImageIndex $InstallImageIndex
+        Add-WinUtilISOStagedDrivers -ContentRoot $ISOContentsDir -Logger $Log -InstallImagePath $InstallImagePath -InstallImageIndex $InstallImageIndex -ResolvedPlan $ResolvedPlan -RegistryAction $RegistryAction -ManifestDirectory $ManifestDirectory
+    } elseif ($ResolvedPlan) {
+        if ([string]::IsNullOrWhiteSpace($ManifestDirectory)) {
+            $ManifestDirectory = Join-Path $ISOContentsDir 'WinUtil-Manifests'
+        }
+        $mountDir = Join-Path (Split-Path -Path $ISOContentsDir -Parent) 'wim_mount'
+        Invoke-WinUtilOfflineServicingTransaction -InstallImagePath $InstallImagePath -ImageIndex $InstallImageIndex -ResolvedPlan $ResolvedPlan -MountPath $mountDir -ManifestDirectory $ManifestDirectory -RegistryAction $RegistryAction -Log $Log | Out-Null
     }
 }

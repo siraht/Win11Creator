@@ -188,6 +188,8 @@ function Invoke-WinUtilISOModify {
     $runspace.ThreadOptions  = "ReuseThread"
     $runspace.Open()
     $injectDrivers = $sync["WPFWin11ISOInjectDrivers"].IsChecked -eq $true
+    $resolvedPlan = $sync["Win11ISOResolvedPlan"]
+    $registryActions = @($sync["Win11ISORegistryActions"])
     $runspace.SessionStateProxy.SetVariable("sync",                $sync)
     $runspace.SessionStateProxy.SetVariable("isoPath",             $isoPath)
     $runspace.SessionStateProxy.SetVariable("driveLetter",         $driveLetter)
@@ -197,17 +199,28 @@ function Invoke-WinUtilISOModify {
     $runspace.SessionStateProxy.SetVariable("selectedEditionName", $selectedEditionName)
     $runspace.SessionStateProxy.SetVariable("autounattendContent", $autounattendContent)
     $runspace.SessionStateProxy.SetVariable("injectDrivers",       $injectDrivers)
+    $runspace.SessionStateProxy.SetVariable("resolvedPlan",       $resolvedPlan)
+    $runspace.SessionStateProxy.SetVariable("registryActions",    $registryActions)
 
     $isoScriptFuncDef   = "function Invoke-WinUtilISOScript {`n" + ${function:Invoke-WinUtilISOScript}.ToString() + "`n}"
     $win11ISOLogFuncDef = "function Write-WinUtilISOLog {`n"     + ${function:Write-WinUtilISOLog}.ToString()     + "`n}"
+    $inventoryItemFuncDef = "function ConvertTo-WinUtilImageInventoryItem {`n" + ${function:ConvertTo-WinUtilImageInventoryItem}.ToString() + "`n}"
+    $inventoryFuncDef = "function Get-WinUtilOfflineImageInventory {`n" + ${function:Get-WinUtilOfflineImageInventory}.ToString() + "`n}"
+    $transactionFuncDef = "function Invoke-WinUtilOfflineServicingTransaction {`n" + ${function:Invoke-WinUtilOfflineServicingTransaction}.ToString() + "`n}"
     $runspace.SessionStateProxy.SetVariable("isoScriptFuncDef",   $isoScriptFuncDef)
     $runspace.SessionStateProxy.SetVariable("win11ISOLogFuncDef", $win11ISOLogFuncDef)
+    $runspace.SessionStateProxy.SetVariable("inventoryItemFuncDef", $inventoryItemFuncDef)
+    $runspace.SessionStateProxy.SetVariable("inventoryFuncDef", $inventoryFuncDef)
+    $runspace.SessionStateProxy.SetVariable("transactionFuncDef", $transactionFuncDef)
 
     $script = [Management.Automation.PowerShell]::Create()
     $script.Runspace = $runspace
     $script.AddScript({
         . ([scriptblock]::Create($isoScriptFuncDef))
         . ([scriptblock]::Create($win11ISOLogFuncDef))
+        . ([scriptblock]::Create($inventoryItemFuncDef))
+        . ([scriptblock]::Create($inventoryFuncDef))
+        . ([scriptblock]::Create($transactionFuncDef))
 
         function Log($msg) {
             $ts = (Get-Date).ToString("HH:mm:ss")
@@ -277,10 +290,13 @@ function Invoke-WinUtilISOModify {
             $selectedEditionId = Get-WinUtilEditionIdFromName -EditionName $selectedEditionName
 
             Log "Writing autounattend.xml and edition selection..."
-            Invoke-WinUtilISOScript -ISOContentsDir $isoContents -AutoUnattendXml $autounattendContent -InjectCurrentSystemDrivers $injectDrivers -InstallImagePath $localWim -InstallImageIndex $selectedWimIndex -InstallEditionId $selectedEditionId -Log { param($m) Log $m }
+            $manifestDirectory = Join-Path $workDir 'manifests'
+            Invoke-WinUtilISOScript -ISOContentsDir $isoContents -AutoUnattendXml $autounattendContent -InjectCurrentSystemDrivers $injectDrivers -InstallImagePath $localWim -InstallImageIndex $selectedWimIndex -InstallEditionId $selectedEditionId -ResolvedPlan $resolvedPlan -RegistryAction $registryActions -ManifestDirectory $manifestDirectory -Log { param($m) Log $m }
 
             SetProgress "Preserving install image..." 70
-            if ($injectDrivers) {
+            if ($resolvedPlan) {
+                Log "Applied the resolved offline servicing plan to $sourceImageFileName index $selectedWimIndex with one mount and commit. Manifests: $manifestDirectory"
+            } elseif ($injectDrivers) {
                 Log "Added current-system drivers to $sourceImageFileName index $selectedWimIndex with one mount and commit."
             } else {
                 Log "Preserved the original $sourceImageFileName without mounting, exporting, or modifying it."

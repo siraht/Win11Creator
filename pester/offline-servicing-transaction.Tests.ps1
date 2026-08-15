@@ -2,6 +2,8 @@ Describe 'Offline servicing transaction boundary' {
     BeforeAll {
         $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '..')
         . (Join-Path $repoRoot 'functions/private/Invoke-WinUtilOfflineServicingTransaction.ps1')
+        . (Join-Path $repoRoot 'functions/private/Invoke-WinUtilISOScript.ps1')
+        $script:autoUnattendPath = Join-Path $repoRoot 'tools/autounattend.xml'
 
         function Get-WindowsImage { param([switch]$Mounted, $ErrorAction) }
         function Mount-WindowsImage { param($ImagePath, $Index, $Path, $ErrorAction) }
@@ -157,5 +159,42 @@ Describe 'Offline servicing transaction boundary' {
         { Invoke-WinUtilOfflineServicingTransaction -InstallImagePath $script:wimPath -ImageIndex 6 -ResolvedPlan $plan -MountPath $script:mountPath -ManifestDirectory $script:manifestPath } |
             Should -Throw "*kind 'SystemApp' cannot be safely serviced offline*"
         Should -Invoke Mount-WindowsImage -Times 0 -Exactly
+    }
+
+    It 'routes driver injection and the resolved plan through one transaction mount' {
+        $contentRoot = Join-Path $script:testRoot 'iso_contents'
+        $plan = [pscustomobject]@{ SchemaVersion = '1.0'; Decisions = @() }
+        $script:transactionDriverDirectory = ''
+        Mock Invoke-WinUtilOfflineServicingTransaction {
+            $script:transactionDriverDirectory = $DriverDirectory
+        }
+        Mock Start-Process {
+            $destinationMatch = [regex]::Match([string]$ArgumentList, '/destination:"([^"]+)"')
+            $fixturePath = Join-Path $destinationMatch.Groups[1].Value 'storage_pkg'
+            New-Item -Path $fixturePath -ItemType Directory -Force | Out-Null
+            Set-Content -Path (Join-Path $fixturePath 'iaStorAC.inf') -Value "[Version]`r`nClass=SCSIAdapter" -Encoding ASCII
+            [pscustomobject]@{ ExitCode = 0 }
+        } -ParameterFilter { $FilePath -eq 'dism.exe' }
+
+        function dism.exe {
+            param ([Parameter(ValueFromRemainingArguments)][string[]]$Arguments)
+            $script:dismCalls.Add(($Arguments -join '|'))
+            $global:LASTEXITCODE = 0
+            if ($Arguments -contains '/Get-WimInfo') {
+                'Languages : en-US'
+                'Installation : Client'
+                'Edition : Professional'
+                'ProductSuite : Terminal Server'
+                'ProductType : WinNT'
+            }
+        }
+
+        Invoke-WinUtilISOScript -ISOContentsDir $contentRoot -AutoUnattendXml (Get-Content $script:autoUnattendPath -Raw) -InjectCurrentSystemDrivers $true -InstallImagePath $script:wimPath -InstallImageIndex 6 -ResolvedPlan $plan -ManifestDirectory $script:manifestPath
+
+        Should -Invoke Invoke-WinUtilOfflineServicingTransaction -Times 1 -Exactly -ParameterFilter {
+            $InstallImagePath -eq $script:wimPath -and $ImageIndex -eq 6 -and $ResolvedPlan -eq $plan -and $DriverDirectory
+        }
+        $script:transactionDriverDirectory | Should -Not -BeNullOrEmpty
+        @($script:dismCalls | Where-Object { $_ -match '/Mount-Image|/Unmount-Image|/Add-Driver' }).Count | Should -Be 0
     }
 }
