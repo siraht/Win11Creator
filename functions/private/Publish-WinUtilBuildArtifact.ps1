@@ -42,7 +42,8 @@ function Publish-WinUtilBuildArtifact {
         [Parameter(Mandatory)][string]$ManifestDirectory,
         [Parameter(Mandatory)][string]$BuildLogPath,
         [scriptblock]$CopyFile = { param($source, $destination) Copy-Item -LiteralPath $source -Destination $destination -ErrorAction Stop },
-        [scriptblock]$GetHash = { param($path) (Get-FileHash -LiteralPath $path -Algorithm SHA256 -ErrorAction Stop).Hash }
+        [scriptblock]$GetHash = { param($path) (Get-FileHash -LiteralPath $path -Algorithm SHA256 -ErrorAction Stop).Hash },
+        [scriptblock]$PublishDirectory = { param($source, $destination) [System.IO.Directory]::Move($source, $destination) }
     )
 
     $null = $GetHash
@@ -122,7 +123,7 @@ function Publish-WinUtilBuildArtifact {
             $hashLines,
             [System.Text.UTF8Encoding]::new($false)
         )
-        Move-Item -LiteralPath $pendingDirectory -Destination $evidenceDirectory -ErrorAction Stop
+        & $PublishDirectory $pendingDirectory $evidenceDirectory
         return [pscustomobject][ordered]@{
             SchemaVersion = '1.0'
             OutputPath = $outputItem.FullName

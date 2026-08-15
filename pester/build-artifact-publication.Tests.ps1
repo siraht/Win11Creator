@@ -122,4 +122,26 @@ Describe 'Durable build artifact publication' {
         @(Get-ChildItem -LiteralPath $script:testRoot -Directory -Filter '.*.pending-*').Count | Should -Be 0
         Test-Path -LiteralPath (Join-Path $script:manifestDirectory 'ResolvedPlan.json') | Should -BeTrue
     }
+
+    It 'does not merge staged evidence into a concurrently created destination' {
+        $unrelatedDirectory = Join-Path $script:testRoot 'unrelated-output'
+        New-Item -Path $unrelatedDirectory -ItemType Directory | Out-Null
+        Set-Content -LiteralPath (Join-Path $unrelatedDirectory 'keep.txt') -Value 'keep me'
+        $publishWithRace = {
+            param($source, $destination)
+            @(Get-ChildItem -LiteralPath $source -File).Count | Should -Be 7
+            New-Item -Path $destination -ItemType Directory -ErrorAction Stop | Out-Null
+            Set-Content -LiteralPath (Join-Path $destination 'concurrent.txt') -Value 'another publisher'
+            throw 'injected concurrent evidence destination'
+        }
+
+        { Publish-WinUtilBuildArtifact -OutputPath $script:outputPath -ManifestDirectory $script:manifestDirectory -BuildLogPath $script:logPath -PublishDirectory $publishWithRace } |
+            Should -Throw '*Build artifact publication failed*concurrent evidence destination*'
+
+        $evidenceDirectory = Join-Path $script:testRoot 'Win11.WinUtil-build'
+        @(Get-ChildItem -LiteralPath $evidenceDirectory -Force).Name | Should -Be @('concurrent.txt')
+        (Get-Content -LiteralPath (Join-Path $unrelatedDirectory 'keep.txt') -Raw).Trim() | Should -Be 'keep me'
+        @(Get-ChildItem -LiteralPath $script:testRoot -Directory -Filter '.*.pending-*').Count | Should -Be 0
+        Test-Path -LiteralPath (Join-Path $script:manifestDirectory 'ResolvedPlan.json') | Should -BeTrue
+    }
 }
