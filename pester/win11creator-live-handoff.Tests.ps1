@@ -24,6 +24,7 @@ Describe 'Win11 Creator live policy handoff' {
                 [pscustomobject]@{ Kind = 'AppX'; Name = 'Microsoft.WindowsFeedbackHub'; Identity = 'Microsoft.WindowsFeedbackHub_1.0_neutral_~_8wekyb3d8bbwe'; State = 'Provisioned' },
                 [pscustomobject]@{ Kind = 'Package'; Name = 'Microsoft-Windows-Windows-Defender-Package'; Identity = 'Microsoft-Windows-Windows-Defender-Package~31bf3856ad364e35~amd64~~10.0.26200.1'; State = 'Installed' },
                 [pscustomobject]@{ Kind = 'Package'; Name = 'Microsoft-Windows-StartMenuExperienceHost-Package'; Identity = 'Microsoft-Windows-StartMenuExperienceHost-Package~31bf~amd64~~10.0.1.0'; State = 'Installed' },
+                [pscustomobject]@{ Kind = 'Package'; Name = 'Microsoft-Windows-Windows-Defender-Client-Package'; Identity = 'Microsoft-Windows-Windows-Defender-Client-Package~31bf~amd64~~10.0.26200.1'; State = 'Installed' },
                 [pscustomobject]@{ Kind = 'Package'; Name = 'Unknown'; Identity = 'Contoso.Unknown~test'; State = 'Installed' }
             )
         }
