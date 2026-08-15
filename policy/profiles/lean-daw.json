@@ -12,6 +12,7 @@
     "feedback-hub": "remove",
     "defender": "remove",
     "smartscreen": "disable",
+    "uac-prompt-suppression": "keep",
     "uac": "disable",
     "windows-ai": "remove",
     "onedrive": "remove",

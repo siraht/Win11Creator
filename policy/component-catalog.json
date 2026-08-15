@@ -1,6 +1,18 @@
 {
   "schemaVersion": 1,
   "documentType": "component-catalog",
+  "exclusiveGroups": [
+    {
+      "id": "uac-mode",
+      "name": "User Account Control",
+      "description": "Choose one UAC posture. Prompt suppression keeps UAC enabled but removes administrator consent prompts; full disable turns off the UAC security boundary and has broader compatibility impact.",
+      "keepLabel": "Keep Windows UAC defaults",
+      "members": [
+        "uac-prompt-suppression",
+        "uac"
+      ]
+    }
+  ],
   "components": [
     {
       "id": "windows-search",
@@ -236,8 +248,68 @@
       "exposed": true
     },
     {
+      "id": "uac-prompt-suppression",
+      "name": "Suppress UAC prompts (UAC stays enabled)",
+      "category": "security",
+      "defaultAction": "keep",
+      "risk": "high",
+      "targets": [
+        {
+          "kind": "registry",
+          "match": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System:ConsentPromptBehaviorAdmin",
+          "matchType": "exact",
+          "operations": [
+            {
+              "operation": "set-registry-value",
+              "onAction": "disable",
+              "hive": "SOFTWARE",
+              "key": "Microsoft\\Windows\\CurrentVersion\\Policies\\System",
+              "name": "EnableLUA",
+              "type": "REG_DWORD",
+              "value": 1
+            },
+            {
+              "operation": "set-registry-value",
+              "onAction": "disable",
+              "hive": "SOFTWARE",
+              "key": "Microsoft\\Windows\\CurrentVersion\\Policies\\System",
+              "name": "ConsentPromptBehaviorAdmin",
+              "type": "REG_DWORD",
+              "value": 0
+            },
+            {
+              "operation": "set-registry-value",
+              "onAction": "disable",
+              "hive": "SOFTWARE",
+              "key": "Microsoft\\Windows\\CurrentVersion\\Policies\\System",
+              "name": "ConsentPromptBehaviorUser",
+              "type": "REG_DWORD",
+              "value": 0
+            },
+            {
+              "operation": "set-registry-value",
+              "onAction": "disable",
+              "hive": "SOFTWARE",
+              "key": "Microsoft\\Windows\\CurrentVersion\\Policies\\System",
+              "name": "PromptOnSecureDesktop",
+              "type": "REG_DWORD",
+              "value": 0
+            }
+          ]
+        }
+      ],
+      "protects": [],
+      "conflicts": [],
+      "requires": [],
+      "description": "Keeps EnableLUA active while administrators elevate without a consent prompt and standard-user elevation requests are denied automatically.",
+      "reason": "Reduces elevation interruptions without disabling the UAC infrastructure required by modern Windows applications.",
+      "consequences": "Administrator processes can elevate without consent, the secure-desktop prompt is disabled, and standard-user elevation requests are denied; this materially weakens elevation protection even though EnableLUA remains enabled.",
+      "reversible": true,
+      "exposed": true
+    },
+    {
       "id": "uac",
-      "name": "User Account Control",
+      "name": "Fully disable UAC (EnableLUA=0)",
       "category": "security",
       "defaultAction": "keep",
       "risk": "expert",
@@ -270,9 +342,9 @@
         }
       ],
       "requires": [],
-      "description": "Separates standard and elevated administrative operations.",
+      "description": "Turns off the UAC infrastructure by setting EnableLUA to zero.",
       "reason": "The Lean DAW default requests full UAC disable for unattended local operation.",
-      "consequences": "Disabling EnableLUA weakens security and can break modern applications.",
+      "consequences": "Removes the UAC security boundary, requires a restart, and can break Microsoft Store and other modern applications.",
       "reversible": true,
       "exposed": true
     },

@@ -24,6 +24,7 @@ function Resolve-WinUtilComponentPolicyPlan {
     $resolverRules = [System.Collections.Generic.List[object]]::new()
     $safetyDeclarations = [System.Collections.Generic.List[object]]::new()
     $protectedOverrideConflicts = [System.Collections.Generic.List[object]]::new()
+    $exclusiveSelectionConflicts = [System.Collections.Generic.List[object]]::new()
     $operationConflicts = [System.Collections.Generic.List[object]]::new()
     $registryActions = [System.Collections.Generic.List[object]]::new()
     $setupActions = [System.Collections.Generic.List[object]]::new()
@@ -143,6 +144,19 @@ function Resolve-WinUtilComponentPolicyPlan {
         }
     }
 
+    foreach ($group in @($Catalog.exclusiveGroups)) {
+        $activeMembers = @($group.members | Where-Object { $selectedActions[[string]$_] -in @('remove', 'disable') })
+        if ($activeMembers.Count -gt 1) {
+            $exclusiveSelectionConflicts.Add([pscustomobject]@{
+                ComponentId = [string]$activeMembers[0]
+                RelatedComponentId = [string]$activeMembers[1]
+                Severity = 'mutually-exclusive-selection'
+                Reason = "Exclusive group '$($group.name)' permits only one active choice; selected: $($activeMembers -join ', ')."
+                IsBlocking = $true
+            })
+        }
+    }
+
     $evaluatedSafety = Test-WinUtilComponentSafety `
         -ComponentDeclarations @($safetyDeclarations) `
         -SelectedActions $selectedActions `
@@ -169,7 +183,7 @@ function Resolve-WinUtilComponentPolicyPlan {
     }
 
     $allConflicts = @($evaluatedSafety.Conflicts) + @($protectedOverrideConflicts) +
-        @($inventoryOverrideConflicts) + @($operationConflicts)
+        @($inventoryOverrideConflicts) + @($exclusiveSelectionConflicts) + @($operationConflicts)
     $safety = [pscustomobject]@{
         IsAllowed = @($allConflicts | Where-Object IsBlocking).Count -eq 0
         ExpertMode = $ExpertMode.IsPresent

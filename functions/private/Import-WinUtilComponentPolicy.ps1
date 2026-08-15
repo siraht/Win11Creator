@@ -157,6 +157,40 @@ function Test-WinUtilComponentPolicy {
                 }
             }
         }
+        $exclusiveGroupIds = New-Object System.Collections.Generic.HashSet[string]
+        $exclusiveMemberIds = New-Object System.Collections.Generic.HashSet[string]
+        foreach ($group in @($Policy.exclusiveGroups)) {
+            $groupId = [string]$group.id
+            if ([string]::IsNullOrWhiteSpace($groupId)) {
+                $validationErrors.Add('Catalog exclusive group is missing id.')
+                continue
+            }
+            if (-not $exclusiveGroupIds.Add($groupId)) {
+                $validationErrors.Add("Catalog contains duplicate exclusive group id '$groupId'.")
+            }
+            foreach ($field in @('name', 'description', 'keepLabel')) {
+                if ([string]::IsNullOrWhiteSpace([string]$group.$field)) {
+                    $validationErrors.Add("Exclusive group '$groupId' is missing $field.")
+                }
+            }
+            $members = @($group.members)
+            if ($members.Count -lt 2) {
+                $validationErrors.Add("Exclusive group '$groupId' must contain at least two members.")
+            }
+            $membersInGroup = New-Object System.Collections.Generic.HashSet[string]
+            foreach ($member in $members) {
+                $memberId = [string]$member
+                if (-not $ids.Contains($memberId)) {
+                    $validationErrors.Add("Exclusive group '$groupId' references unknown component '$memberId'.")
+                }
+                if (-not $membersInGroup.Add($memberId)) {
+                    $validationErrors.Add("Exclusive group '$groupId' contains duplicate member '$memberId'.")
+                }
+                if (-not $exclusiveMemberIds.Add($memberId)) {
+                    $validationErrors.Add("Component '$memberId' belongs to more than one exclusive group.")
+                }
+            }
+        }
     } elseif ($Policy.documentType -eq "component-profile") {
         foreach ($field in @("id", "name", "description")) {
             if ([string]::IsNullOrWhiteSpace([string]$Policy.$field)) {
@@ -176,6 +210,17 @@ function Test-WinUtilComponentPolicy {
                 }
                 if ($Catalog -and $catalogIds -notcontains $actionProperty.Name) {
                     $validationErrors.Add("Profile '$($Policy.id)' references unknown component '$($actionProperty.Name)'.")
+                }
+            }
+            if ($Catalog) {
+                foreach ($group in @($Catalog.exclusiveGroups)) {
+                    $activeMembers = @($group.members | Where-Object {
+                        $memberAction = $Policy.actions.PSObject.Properties[[string]$_]
+                        $memberAction -and [string]$memberAction.Value -in @('remove', 'disable')
+                    })
+                    if ($activeMembers.Count -gt 1) {
+                        $validationErrors.Add("Profile '$($Policy.id)' selects mutually exclusive components '$($activeMembers -join "', '")' in group '$($group.id)'.")
+                    }
                 }
             }
         }

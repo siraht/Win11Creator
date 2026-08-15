@@ -11,6 +11,10 @@
       "type": "array",
       "items": { "$ref": "#/$defs/component" }
     },
+    "exclusiveGroups": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/exclusiveGroup" }
+    },
     "id": { "type": "string", "minLength": 1 },
     "name": { "type": "string", "minLength": 1 },
     "description": { "type": "string", "minLength": 1 },
@@ -103,6 +107,23 @@
         "match": { "type": "string", "minLength": 1 },
         "matchType": { "$ref": "#/$defs/matchType" },
         "operations": { "type": "array", "items": { "$ref": "#/$defs/operation" } }
+      },
+      "additionalProperties": false
+    },
+    "exclusiveGroup": {
+      "type": "object",
+      "required": ["id", "name", "description", "keepLabel", "members"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+        "name": { "type": "string", "minLength": 1 },
+        "description": { "type": "string", "minLength": 1 },
+        "keepLabel": { "type": "string", "minLength": 1 },
+        "members": {
+          "type": "array",
+          "minItems": 2,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        }
       },
       "additionalProperties": false
     },
