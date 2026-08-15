@@ -8,6 +8,7 @@ function Resolve-WinUtilComponentPolicyPlan {
         [Parameter(Mandatory)][psobject]$Catalog,
         [Parameter(Mandatory)][Alias('Profile')][psobject]$ComponentProfile,
         [System.Collections.IDictionary]$ActionOverrides = @{},
+        [psobject]$OfflineSystemSelect,
         [switch]$ExpertMode
     )
 
@@ -18,6 +19,9 @@ function Resolve-WinUtilComponentPolicyPlan {
     $resolverRules = [System.Collections.Generic.List[object]]::new()
     $safetyDeclarations = [System.Collections.Generic.List[object]]::new()
     $protectedOverrideConflicts = [System.Collections.Generic.List[object]]::new()
+    $operationConflicts = [System.Collections.Generic.List[object]]::new()
+    $registryActions = [System.Collections.Generic.List[object]]::new()
+    $setupActions = [System.Collections.Generic.List[object]]::new()
 
     foreach ($component in @($Catalog.components)) {
         $componentId = [string]$component.id
@@ -54,6 +58,78 @@ function Resolve-WinUtilComponentPolicyPlan {
             Requires = @(@($component.requires) + @($component.protects) | Sort-Object -Unique)
             Conflicts = @($component.conflicts)
         })
+
+        if ($selectedAction -in @('remove', 'disable')) {
+            foreach ($target in @($component.targets | Where-Object kind -in @('registry', 'service', 'scheduled-task'))) {
+                $matchingOperations = @($target.operations | Where-Object onAction -eq $selectedAction)
+                if ($matchingOperations.Count -eq 0) {
+                    $operationConflicts.Add([pscustomobject]@{
+                        ComponentId = $componentId
+                        RelatedComponentId = $componentId
+                        Severity = 'unsupported-operation'
+                        Reason = "Selected action '$selectedAction' has no typed operation for $($target.kind) target '$($target.match)'."
+                        IsBlocking = $true
+                    })
+                    continue
+                }
+                foreach ($operation in $matchingOperations) {
+                    switch ([string]$operation.operation) {
+                        'set-registry-value' {
+                            $registryActions.Add([pscustomobject]@{
+                                Action = 'Set'
+                                Hive = [string]$operation.hive
+                                Key = [string]$operation.key
+                                Name = [string]$operation.name
+                                Type = [string]$operation.type
+                                Value = $operation.value
+                                SourceComponentId = $componentId
+                            })
+                        }
+                        'disable-service' {
+                            $currentValues = @($OfflineSystemSelect.Current)
+                            $currentControlSet = 0
+                            if ($currentValues.Count -ne 1 -or -not [int]::TryParse([string]$currentValues[0], [ref]$currentControlSet) -or $currentControlSet -lt 1 -or $currentControlSet -gt 999) {
+                                $operationConflicts.Add([pscustomobject]@{
+                                    ComponentId = $componentId
+                                    RelatedComponentId = $componentId
+                                    Severity = 'unsupported-operation'
+                                    Reason = "Service '$($operation.serviceName)' requires one valid offline SYSTEM Select\\Current control-set value."
+                                    IsBlocking = $true
+                                })
+                                continue
+                            }
+                            $registryActions.Add([pscustomobject]@{
+                                Action = 'Set'
+                                Hive = 'SYSTEM'
+                                Key = ('ControlSet{0:D3}\Services\{1}' -f $currentControlSet, [string]$operation.serviceName)
+                                Name = 'Start'
+                                Type = 'REG_DWORD'
+                                Value = 4
+                                SourceComponentId = $componentId
+                            })
+                        }
+                        'disable-scheduled-task-at-setup' {
+                            $setupActions.Add([pscustomobject]@{
+                                Mechanism = 'schtasks-change-disable'
+                                Phase = 'specialize'
+                                Executable = 'schtasks.exe'
+                                Arguments = @('/Change', '/TN', [string]$operation.taskPath, '/Disable')
+                                SourceComponentId = $componentId
+                            })
+                        }
+                        default {
+                            $operationConflicts.Add([pscustomobject]@{
+                                ComponentId = $componentId
+                                RelatedComponentId = $componentId
+                                Severity = 'unsupported-operation'
+                                Reason = "Unsupported typed operation '$($operation.operation)'."
+                                IsBlocking = $true
+                            })
+                        }
+                    }
+                }
+            }
+        }
     }
 
     foreach ($overrideId in @($ActionOverrides.Keys)) {
@@ -66,7 +142,7 @@ function Resolve-WinUtilComponentPolicyPlan {
         -ComponentDeclarations @($safetyDeclarations) `
         -SelectedActions $selectedActions `
         -ExpertMode:$ExpertMode
-    $allConflicts = @($evaluatedSafety.Conflicts) + @($protectedOverrideConflicts)
+    $allConflicts = @($evaluatedSafety.Conflicts) + @($protectedOverrideConflicts) + @($operationConflicts)
     $safety = [pscustomobject]@{
         IsAllowed = @($allConflicts | Where-Object IsBlocking).Count -eq 0
         ExpertMode = $ExpertMode.IsPresent
@@ -76,11 +152,21 @@ function Resolve-WinUtilComponentPolicyPlan {
     $resolvedPlan = Resolve-WinUtilOfflineImagePolicy -Inventory $Inventory -Policy @($resolverRules)
     $resolvedPlan | Add-Member -NotePropertyName IsAllowed -NotePropertyValue $safety.IsAllowed
     $resolvedPlan | Add-Member -NotePropertyName Safety -NotePropertyValue $safety
+    $actionBundle = [pscustomobject][ordered]@{
+        SchemaVersion = '1.0'
+        ProfileId = [string]$ComponentProfile.id
+        IsAllowed = $safety.IsAllowed
+        Safety = $safety
+        ResolvedPlan = $resolvedPlan
+        RegistryActions = @($registryActions)
+        SetupActions = @($setupActions)
+    }
 
     [pscustomobject]@{
         ProfileId = [string]$ComponentProfile.id
         Rules = @($resolverRules)
         Safety = $safety
         ResolvedPlan = $resolvedPlan
+        ActionBundle = $actionBundle
     }
 }
