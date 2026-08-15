@@ -149,12 +149,22 @@ Describe 'Win11 Creator advanced package selector safeguards' {
             -ImageInventory $script:inventory `
             -ResolvedPlan $script:plan `
             -Safety ([pscustomobject]@{ IsAllowed = $true }) `
+            -ActionBundle ([pscustomobject]@{ IsReady = $true }) `
+            -RegistryActions @()
+        $unstagedSetup = New-WinUtilComponentPolicyHandoff `
+            -SelectedProfileId 'lean-daw' `
+            -ImageInventory $script:inventory `
+            -ResolvedPlan $script:plan `
+            -Safety ([pscustomobject]@{ IsAllowed = $true }) `
+            -ActionBundle ([pscustomobject]@{ IsReady = $false }) `
             -RegistryActions @()
 
         $preview.IsReady | Should -BeFalse
         $preview.Status | Should -Match 'Preview only'
         $missingRegistry.IsReady | Should -BeFalse
         $missingRegistry.Status | Should -Match 'registry actions have not been staged'
+        $unstagedSetup.IsReady | Should -BeFalse
+        $unstagedSetup.Status | Should -Match 'setup actions have not been staged'
         $ready.IsReady | Should -BeTrue
     }
 }

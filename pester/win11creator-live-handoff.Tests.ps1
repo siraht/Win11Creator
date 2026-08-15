@@ -91,4 +91,19 @@ Describe 'Win11 Creator live policy handoff' {
         $isoSource | Should -Match '(?s)function Invoke-WinUtilISOCleanAndReset.*Stop-WinUtilOfflineServicingSession'
         $isoSource | Should -Match '(?s)ERROR during edition analysis.*Stop-WinUtilOfflineServicingSession.*Remove-Item'
     }
+
+    It 'prepares ESD and resolves the typed action bundle before the single analysis mount' {
+        $isoSource = Get-Content (Join-Path $repoRoot 'functions/private/Invoke-WinUtilISO.ps1') -Raw
+        $uiSource = Get-Content (Join-Path $repoRoot 'functions/private/Initialize-WinUtilComponentPolicyUI.ps1') -Raw
+        $exportIndex = $isoSource.IndexOf('Export-WinUtilEsdImageToWim')
+        $controlSetIndex = $isoSource.IndexOf('Get-WinUtilOfflineSystemSelect')
+        $mountIndex = $isoSource.IndexOf('$session = Start-WinUtilOfflineServicingSession')
+
+        $exportIndex | Should -BeGreaterThan -1
+        $mountIndex | Should -BeGreaterThan $exportIndex
+        $controlSetIndex | Should -BeGreaterThan $mountIndex
+        $uiSource | Should -Match '-OfflineSystemSelect \$sync\[''Win11ISOOfflineSession''\]\.OfflineSystemSelect'
+        $uiSource | Should -Match '\$result\.ActionBundle\.RegistryActions'
+        $uiSource | Should -Match '-ActionBundle \$result\.ActionBundle'
+    }
 }

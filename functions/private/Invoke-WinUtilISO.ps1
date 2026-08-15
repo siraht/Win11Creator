@@ -207,9 +207,11 @@ function Invoke-WinUtilISOAnalyze {
             Set-ItemProperty -LiteralPath $localWim -Name IsReadOnly -Value $false
             $mountPath = Join-Path $workDir 'wim_mount'
             $session = Start-WinUtilOfflineServicingSession -InstallImagePath $localWim -ImageIndex $imageIndex -ImageName $imageName -MountPath $mountPath -Log { param($message) Write-WinUtilISOLog $message }
+            $sync['Win11ISOOfflineSession'] = $session
+            $offlineSystemSelect = Get-WinUtilOfflineSystemSelect -MountedImagePath $session.MountPath
+            $session | Add-Member -NotePropertyName OfflineSystemSelect -NotePropertyValue $offlineSystemSelect
             $sync['Win11ISOWorkDir'] = $workDir
             $sync['Win11ISOContentsDir'] = $isoContents
-            $sync['Win11ISOOfflineSession'] = $session
             $sync['Win11ISOImageInventory'] = $session.Inventory
             Resolve-WinUtilComponentPolicyHandoff | Out-Null
             Write-WinUtilISOLog "Analysis ready: $(@($session.Inventory.Items).Count) inventory items. The copied image remains mounted for this build."

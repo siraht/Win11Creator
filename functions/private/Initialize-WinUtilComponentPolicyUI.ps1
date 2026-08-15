@@ -205,14 +205,17 @@ function New-WinUtilComponentPolicyHandoff {
         [psobject]$ImageInventory,
         [psobject]$ResolvedPlan,
         [psobject]$Safety,
+        [psobject]$ActionBundle,
         [Parameter()][AllowEmptyCollection()][object[]]$RegistryActions
     )
 
     $hasInventory = $null -ne $ImageInventory
     $hasResolvedPlan = $null -ne $ResolvedPlan
+    $hasActionBundle = $null -ne $ActionBundle
     $hasRegistryActions = $null -ne $RegistryActions
     $safetyAllowed = $null -ne $Safety -and $Safety.IsAllowed -eq $true
-    $isReady = $hasInventory -and $hasResolvedPlan -and $hasRegistryActions -and $safetyAllowed
+    $actionBundleReady = $hasActionBundle -and $ActionBundle.IsReady -eq $true
+    $isReady = $hasInventory -and $hasResolvedPlan -and $hasRegistryActions -and $safetyAllowed -and $actionBundleReady
     $status = if (-not $hasInventory) {
         'Preview only: inventory, resolved plan, and registry actions have not been staged.'
     } elseif (-not $hasResolvedPlan) {
@@ -221,16 +224,22 @@ function New-WinUtilComponentPolicyHandoff {
         'Resolved component plan staged; registry actions have not been staged.'
     } elseif (-not $safetyAllowed) {
         'Blocked: component safety review has unresolved conflicts.'
+    } elseif (-not $hasActionBundle) {
+        'Blocked: the typed component action bundle has not been staged.'
+    } elseif (-not $actionBundleReady) {
+        'Blocked: one or more required component setup actions have not been staged.'
     } else {
-        'Ready: resolved component plan and registry actions are staged for servicing.'
+        'Ready: resolved component plan and typed actions are staged for servicing.'
     }
 
     [pscustomobject]@{
         SelectedProfileId = $SelectedProfileId
         HasInventory = $hasInventory
         HasResolvedPlan = $hasResolvedPlan
+        HasActionBundle = $hasActionBundle
         HasRegistryActions = $hasRegistryActions
         SafetyAllowed = $safetyAllowed
+        ActionBundleReady = $actionBundleReady
         IsReady = $isReady
         Status = $status
     }
@@ -276,6 +285,7 @@ function Update-WinUtilComponentPolicyUI {
         Resolve-WinUtilComponentPolicyHandoff | Out-Null
     } else {
         $sync['Win11ISOResolvedPlan'] = $null
+        $sync['Win11ISOActionBundle'] = $null
         $sync['Win11ISORegistryActions'] = $null
     }
 }
@@ -295,10 +305,16 @@ function Resolve-WinUtilComponentPolicyHandoff {
         -Inventory $sync['Win11ISOImageInventory'] `
         -Catalog $sync.configs.componentPolicy.catalog `
         -ComponentProfile $selectedProfile `
+        -OfflineSystemSelect $sync['Win11ISOOfflineSession'].OfflineSystemSelect `
         -ManualOverride @($sync['Win11ISOManualOverrides']) `
         -ExpertMode:($sync.WPFWin11ISOExpertMode.IsChecked -eq $true)
-    $registryActions = @()
-    Set-WinUtilAdvancedPackageSelectorUI -ImageInventory $sync['Win11ISOImageInventory'] -ResolvedPlan $result.ResolvedPlan -Safety $result.Safety -RegistryActions $registryActions
+    $registryActions = @($result.ActionBundle.RegistryActions)
+    Set-WinUtilAdvancedPackageSelectorUI `
+        -ImageInventory $sync['Win11ISOImageInventory'] `
+        -ResolvedPlan $result.ResolvedPlan `
+        -Safety $result.Safety `
+        -ActionBundle $result.ActionBundle `
+        -RegistryActions $registryActions
     return $result
 }
 
@@ -307,11 +323,13 @@ function Set-WinUtilAdvancedPackageSelectorUI {
         [Parameter(Mandatory)][psobject]$ImageInventory,
         [psobject]$ResolvedPlan,
         [psobject]$Safety,
+        [psobject]$ActionBundle,
         [Parameter()][AllowEmptyCollection()][object[]]$RegistryActions
     )
 
     $sync['Win11ISOImageInventory'] = $ImageInventory
     $sync['Win11ISOResolvedPlan'] = $ResolvedPlan
+    $sync['Win11ISOActionBundle'] = $ActionBundle
     $sync['Win11ISORegistryActions'] = $RegistryActions
     $expertMode = $sync.WPFWin11ISOExpertMode.IsChecked -eq $true
     $rows = @(New-WinUtilAdvancedPackageSelectorModel `
@@ -325,6 +343,7 @@ function Set-WinUtilAdvancedPackageSelectorUI {
         -ImageInventory $ImageInventory `
         -ResolvedPlan $ResolvedPlan `
         -Safety $Safety `
+        -ActionBundle $ActionBundle `
         -RegistryActions $RegistryActions
     $sync['Win11ISOPolicyHandoff'] = $handoff
 
