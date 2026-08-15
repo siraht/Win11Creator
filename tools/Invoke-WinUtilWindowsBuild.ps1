@@ -80,7 +80,7 @@ function Get-WinUtilWindowsEditionId {
         'Pro Education N' = 'ProfessionalEducationN'; 'Pro Education' = 'ProfessionalEducation'
         'Pro N' = 'ProfessionalN'; 'Pro' = 'Professional'; 'Education N' = 'EducationN'; 'Education' = 'Education'
         'Enterprise LTSC N' = 'EnterpriseSN'; 'Enterprise LTSC' = 'EnterpriseS'
-        'Enterprise N' = 'EnterpriseN'; 'Enterprise' = 'Enterprise'
+        'Enterprise Evaluation' = 'EnterpriseEval'; 'Enterprise N' = 'EnterpriseN'; 'Enterprise' = 'Enterprise'
     }
     if (-not $editionMap.ContainsKey($normalizedName)) { throw "Unsupported Windows edition name '$ImageName'." }
     return $editionMap[$normalizedName]

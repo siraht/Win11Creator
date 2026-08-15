@@ -77,6 +77,10 @@ BeforeAll {
 }
 
 Describe 'Noninteractive Windows ISO build orchestration' {
+    It 'maps official Enterprise Evaluation media to its servicing edition identifier' {
+        Get-WinUtilWindowsEditionId -ImageName 'Windows 11 Enterprise Evaluation' | Should -Be 'EnterpriseEval'
+    }
+
     It 'builds the default profile through one analyzed servicing session and canonical handoff' {
         $fixture = New-NonInteractiveBuildFixture
 
