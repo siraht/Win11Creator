@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://winutil.example/schema/component-policy-v1.json",
+  "$id": "urn:winutil:schema:component-policy:1",
   "title": "WinUtil component policy v1",
   "type": "object",
   "required": ["schemaVersion", "documentType"],
