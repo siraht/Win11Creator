@@ -109,6 +109,7 @@ jobs:
       WINUTIL_HYPERV_SWITCH: ${{ vars.WINUTIL_HYPERV_SWITCH }}
       WINUTIL_VM_GUEST_USERNAME: ${{ vars.WINUTIL_VM_GUEST_USERNAME }}
       WINUTIL_VM_GUEST_PASSWORD: ${{ secrets.WINUTIL_VM_GUEST_PASSWORD }}
+      WINUTIL_POST_LOGIN_SMOKE_COMMAND: ${{ vars.WINUTIL_POST_LOGIN_SMOKE_COMMAND }}
       WINUTIL_ABLETON_PATH: ${{ vars.WINUTIL_ABLETON_PATH }}
       WINUTIL_VST3_PATHS: ${{ vars.WINUTIL_VST3_PATHS }}
       WINUTIL_LATENCYMON_REPORT: ${{ vars.WINUTIL_LATENCYMON_REPORT }}
@@ -127,6 +128,7 @@ jobs:
             WINUTIL_HYPERV_SWITCH = $env:WINUTIL_HYPERV_SWITCH
             WINUTIL_VM_GUEST_USERNAME = $env:WINUTIL_VM_GUEST_USERNAME
             WINUTIL_VM_GUEST_PASSWORD = $env:WINUTIL_VM_GUEST_PASSWORD
+            WINUTIL_POST_LOGIN_SMOKE_COMMAND = $env:WINUTIL_POST_LOGIN_SMOKE_COMMAND
           }.GetEnumerator()) {
             if (-not $requiredValue.Value) { throw "Required validation setting '$($requiredValue.Key)' is empty." }
           }
@@ -145,7 +147,8 @@ jobs:
             -SwitchName $env:WINUTIL_HYPERV_SWITCH `
             -VhdPath '${{ runner.temp }}\winutil-stock-${{ github.run_id }}-${{ github.run_attempt }}.vhdx' `
             -OutputDirectory '${{ runner.temp }}\winutil-stock-acceptance-${{ github.run_id }}-${{ github.run_attempt }}' `
-            -GuestCredential $credential
+            -GuestCredential $credential `
+            -PostLoginSmokeCommand $env:WINUTIL_POST_LOGIN_SMOKE_COMMAND
 
           ./tools/Invoke-WinUtilHyperVAcceptance.ps1 `
             -IsoPath $env:WINUTIL_LEAN_DAW_ISO_PATH `
@@ -160,7 +163,8 @@ jobs:
             -AbletonPath $env:WINUTIL_ABLETON_PATH `
             -Vst3Path $vst3Paths `
             -LatencyMonReportPath $env:WINUTIL_LATENCYMON_REPORT `
-            -SmokeCommand $env:WINUTIL_DAW_SMOKE_COMMAND
+            -SmokeCommand $env:WINUTIL_DAW_SMOKE_COMMAND `
+            -PostLoginSmokeCommand $env:WINUTIL_POST_LOGIN_SMOKE_COMMAND
 
       - name: Upload installed acceptance evidence
         if: always()

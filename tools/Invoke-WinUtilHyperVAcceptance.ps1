@@ -17,6 +17,7 @@ param (
     [string[]]$Vst3Path,
     [string]$LatencyMonReportPath,
     [string]$SmokeCommand,
+    [string]$PostLoginSmokeCommand,
     [hashtable]$VMProvider,
     [switch]$KeepVM,
     [switch]$PassThru
@@ -33,10 +34,13 @@ function Get-WinUtilHyperVProvider {
             Import-Module Hyper-V -ErrorAction Stop
             if (-not (Get-VMSwitch -Name $SwitchName -ErrorAction SilentlyContinue)) { throw "Hyper-V switch '$SwitchName' does not exist." }
         }
-        CreateVM = {
-            param ($VMName, $SwitchName, $VhdPath, $VhdSizeBytes, $MemoryStartupBytes, $ProcessorCount, $IsoPath, $UnattendIsoPath)
+        AssertTargets = {
+            param ($VMName, $VhdPath)
             if (Get-VM -Name $VMName -ErrorAction SilentlyContinue) { throw "VM '$VMName' already exists." }
             if (Test-Path -LiteralPath $VhdPath) { throw "VHD path '$VhdPath' already exists." }
+        }
+        CreateVM = {
+            param ($VMName, $SwitchName, $VhdPath, $VhdSizeBytes, $MemoryStartupBytes, $ProcessorCount, $IsoPath, $UnattendIsoPath)
             $vm = New-VM -Name $VMName -Generation 2 -MemoryStartupBytes $MemoryStartupBytes -NewVHDPath $VhdPath -NewVHDSizeBytes $VhdSizeBytes -SwitchName $SwitchName -ErrorAction Stop
             Set-VMProcessor -VMName $VMName -Count $ProcessorCount -ErrorAction Stop
             Set-VM -VMName $VMName -AutomaticStartAction Nothing -AutomaticStopAction ShutDown -CheckpointType Disabled -ErrorAction Stop
@@ -64,12 +68,12 @@ function Get-WinUtilHyperVProvider {
             } finally { Remove-PSSession -Session $session }
         }
         InvokeGuestAcceptance = {
-            param ($VMName, [pscredential]$GuestCredential, $HarnessPath, $ExpectedState, $Depth, $GuestOutputPath, $AbletonPath, $Vst3Path, $LatencyMonReportPath, $SmokeCommand)
+            param ($VMName, [pscredential]$GuestCredential, $HarnessPath, $ExpectedState, $Depth, $GuestOutputPath, $AbletonPath, $Vst3Path, $LatencyMonReportPath, $SmokeCommand, $PostLoginSmokeCommand)
             Invoke-Command -VMName $VMName -Credential $GuestCredential -ErrorAction Stop -ScriptBlock {
-                param ($HarnessPath, $ExpectedState, $Depth, $GuestOutputPath, $AbletonPath, $Vst3Path, $LatencyMonReportPath, $SmokeCommand)
-                & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $HarnessPath -ExpectedState $ExpectedState -Depth $Depth -OutputPath $GuestOutputPath -AbletonPath $AbletonPath -Vst3Path $Vst3Path -LatencyMonReportPath $LatencyMonReportPath -SmokeCommand $SmokeCommand
+                param ($HarnessPath, $ExpectedState, $Depth, $GuestOutputPath, $AbletonPath, $Vst3Path, $LatencyMonReportPath, $SmokeCommand, $PostLoginSmokeCommand)
+                & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $HarnessPath -ExpectedState $ExpectedState -Depth $Depth -OutputPath $GuestOutputPath -AbletonPath $AbletonPath -Vst3Path $Vst3Path -LatencyMonReportPath $LatencyMonReportPath -SmokeCommand $SmokeCommand -PostLoginSmokeCommand $PostLoginSmokeCommand
                 [pscustomobject]@{ ExitCode = $LASTEXITCODE }
-            } -ArgumentList $HarnessPath, $ExpectedState, $Depth, $GuestOutputPath, $AbletonPath, $Vst3Path, $LatencyMonReportPath, $SmokeCommand
+            } -ArgumentList $HarnessPath, $ExpectedState, $Depth, $GuestOutputPath, $AbletonPath, $Vst3Path, $LatencyMonReportPath, $SmokeCommand, $PostLoginSmokeCommand
         }
         CopyFromGuest = {
             param ($VMName, [pscredential]$GuestCredential, $SourcePath, $DestinationPath)
@@ -110,6 +114,7 @@ function Invoke-WinUtilHyperVAcceptance {
         [string[]]$Vst3Path,
         [string]$LatencyMonReportPath,
         [string]$SmokeCommand,
+        [Parameter(Mandatory)][string]$PostLoginSmokeCommand,
         [hashtable]$VMProvider,
         [switch]$KeepVM
     )
@@ -120,7 +125,7 @@ function Invoke-WinUtilHyperVAcceptance {
         if (@(Get-ChildItem -LiteralPath $OutputDirectory -Force).Count -gt 0) { throw "Output directory '$OutputDirectory' must be empty to prevent stale evidence." }
     } else { New-Item -Path $OutputDirectory -ItemType Directory -Force | Out-Null }
     if (-not $VMProvider) { $VMProvider = Get-WinUtilHyperVProvider }
-    foreach ($boundary in @('AssertHost', 'CreateVM', 'StartVM', 'GetVMState', 'TestGuestReady', 'CopyToGuest', 'InvokeGuestAcceptance', 'CopyFromGuest', 'RemoveVM', 'Now', 'Delay')) {
+    foreach ($boundary in @('AssertHost', 'AssertTargets', 'CreateVM', 'StartVM', 'GetVMState', 'TestGuestReady', 'CopyToGuest', 'InvokeGuestAcceptance', 'CopyFromGuest', 'RemoveVM', 'Now', 'Delay')) {
         if (-not $VMProvider.ContainsKey($boundary) -or $VMProvider[$boundary] -isnot [scriptblock]) { throw "VMProvider boundary '$boundary' must be a scriptblock." }
     }
 
@@ -130,6 +135,7 @@ function Invoke-WinUtilHyperVAcceptance {
     $failure = $null
     try {
         & $VMProvider.AssertHost $SwitchName
+        & $VMProvider.AssertTargets $VMName $VhdPath
         $isoHash = (Get-FileHash -LiteralPath $IsoPath -Algorithm SHA256).Hash
         $unattendHash = (Get-FileHash -LiteralPath $UnattendIsoPath -Algorithm SHA256).Hash
         Add-Content -LiteralPath $logPath -Value "[$(& $VMProvider.Now)] Creating VM '$VMName' from '$IsoPath' SHA256=$isoHash; answer ISO SHA256=$unattendHash."
@@ -155,7 +161,7 @@ function Invoke-WinUtilHyperVAcceptance {
         $guestJsonPath = "$guestRoot\installed-acceptance.json"
         $guestLogPath = "$guestRoot\installed-acceptance.log"
         & $VMProvider.CopyToGuest $VMName $GuestCredential $hostHarnessPath $guestHarnessPath
-        $guestResult = & $VMProvider.InvokeGuestAcceptance $VMName $GuestCredential $guestHarnessPath $ExpectedState $Depth $guestJsonPath $AbletonPath $Vst3Path $LatencyMonReportPath $SmokeCommand
+        $guestResult = & $VMProvider.InvokeGuestAcceptance $VMName $GuestCredential $guestHarnessPath $ExpectedState $Depth $guestJsonPath $AbletonPath $Vst3Path $LatencyMonReportPath $SmokeCommand $PostLoginSmokeCommand
         & $VMProvider.CopyFromGuest $VMName $GuestCredential $guestJsonPath (Join-Path $OutputDirectory 'installed-acceptance.json')
         & $VMProvider.CopyFromGuest $VMName $GuestCredential $guestLogPath (Join-Path $OutputDirectory 'installed-acceptance.log')
 
@@ -183,7 +189,7 @@ function Invoke-WinUtilHyperVAcceptance {
 }
 
 if ($MyInvocation.InvocationName -ne '.') {
-    $result = Invoke-WinUtilHyperVAcceptance -IsoPath $IsoPath -UnattendIsoPath $UnattendIsoPath -ExpectedState $ExpectedState -Depth $Depth -VMName $VMName -SwitchName $SwitchName -VhdPath $VhdPath -OutputDirectory $OutputDirectory -GuestCredential $GuestCredential -InstallTimeoutMinutes $InstallTimeoutMinutes -MemoryStartupBytes $MemoryStartupBytes -VhdSizeBytes $VhdSizeBytes -ProcessorCount $ProcessorCount -AbletonPath $AbletonPath -Vst3Path $Vst3Path -LatencyMonReportPath $LatencyMonReportPath -SmokeCommand $SmokeCommand -VMProvider $VMProvider -KeepVM:$KeepVM
+    $result = Invoke-WinUtilHyperVAcceptance -IsoPath $IsoPath -UnattendIsoPath $UnattendIsoPath -ExpectedState $ExpectedState -Depth $Depth -VMName $VMName -SwitchName $SwitchName -VhdPath $VhdPath -OutputDirectory $OutputDirectory -GuestCredential $GuestCredential -InstallTimeoutMinutes $InstallTimeoutMinutes -MemoryStartupBytes $MemoryStartupBytes -VhdSizeBytes $VhdSizeBytes -ProcessorCount $ProcessorCount -AbletonPath $AbletonPath -Vst3Path $Vst3Path -LatencyMonReportPath $LatencyMonReportPath -SmokeCommand $SmokeCommand -PostLoginSmokeCommand $PostLoginSmokeCommand -VMProvider $VMProvider -KeepVM:$KeepVM
     if ($PassThru) { $result }
     exit $result.ExitCode
 }

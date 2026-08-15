@@ -10,11 +10,13 @@ BeforeAll {
             [bool]$GuestAccepted = $true,
             [bool]$CopyEvidence = $true,
             [int]$ClockStepMinutes = 0,
-            [bool]$CreateFailure = $false
+            [bool]$CreateFailure = $false,
+            [bool]$TargetFailure = $false
         )
         $state = [pscustomobject]@{ Removed = $false; Started = $false; Clock = [datetime]'2026-01-01T00:00:00Z' }
         $provider = @{
             AssertHost = { param ($SwitchName) if (-not $SwitchName) { throw 'missing switch' } }
+            AssertTargets = { param ($VMName, $VhdPath) if ($TargetFailure) { throw 'target already exists' } }.GetNewClosure()
             CreateVM = { param ($VMName) if (-not $VMName) { throw 'missing VM' }; if ($CreateFailure) { throw 'planted creation failure' } }.GetNewClosure()
             StartVM = { param ($VMName) $state.Started = $true }.GetNewClosure()
             GetVMState = { param ($VMName) $VMState }.GetNewClosure()
@@ -49,7 +51,7 @@ BeforeAll {
         Invoke-WinUtilHyperVAcceptance -IsoPath $isoPath -UnattendIsoPath $answerPath -ExpectedState $ExpectedState -Depth Quick `
             -VMName "WinUtil-$OutputName" -SwitchName 'TestSwitch' -VhdPath (Join-Path $TestDrive "$OutputName.vhdx") `
             -OutputDirectory (Join-Path $TestDrive $OutputName) -GuestCredential $credential -InstallTimeoutMinutes $TimeoutMinutes `
-            -VMProvider $ProviderState.Provider
+            -PostLoginSmokeCommand 'exit 0' -VMProvider $ProviderState.Provider
     }
 }
 
@@ -85,6 +87,15 @@ Describe 'Hyper-V installed acceptance orchestration' {
         $result.ExitCode | Should -Be 1
         $result.Failure | Should -Match 'planted creation failure'
         $fake.State.Removed | Should -BeTrue
+    }
+
+    It 'HyperVAcceptance_PreexistingTargetIsNeverRemoved_PlantedNegative' {
+        $fake = New-HyperVAcceptanceProvider -TargetFailure $true
+        $result = Invoke-TestHyperVAcceptance -ProviderState $fake -OutputName 'existing-target'
+
+        $result.ExitCode | Should -Be 1
+        $result.Failure | Should -Match 'target already exists'
+        $fake.State.Removed | Should -BeFalse
     }
 
     It 'HyperVAcceptance_InstallTimeout_PlantedNegative' {
@@ -124,7 +135,7 @@ Describe 'Hyper-V installed acceptance orchestration' {
         Set-Content -LiteralPath $answer -Value fixture
         $credential = [pscredential]::new('test', (ConvertTo-SecureString 'test' -AsPlainText -Force))
 
-        { Invoke-WinUtilHyperVAcceptance -IsoPath $iso -UnattendIsoPath $answer -ExpectedState StockControl -VMName Test -SwitchName Test -VhdPath (Join-Path $TestDrive 'stale.vhdx') -OutputDirectory $output -GuestCredential $credential -VMProvider $fake.Provider } |
+        { Invoke-WinUtilHyperVAcceptance -IsoPath $iso -UnattendIsoPath $answer -ExpectedState StockControl -VMName Test -SwitchName Test -VhdPath (Join-Path $TestDrive 'stale.vhdx') -OutputDirectory $output -GuestCredential $credential -PostLoginSmokeCommand 'exit 0' -VMProvider $fake.Provider } |
             Should -Throw '*must be empty to prevent stale evidence*'
     }
 
