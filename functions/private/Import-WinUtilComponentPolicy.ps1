@@ -67,6 +67,9 @@ function Test-WinUtilComponentPolicy {
                 } elseif ($target.matchType -ne "wildcard" -and [string]$target.match -match '[*?]') {
                     $validationErrors.Add("Component '$componentId' $($target.matchType) target '$($target.match)' cannot contain * or ?.")
                 }
+                if ($target.PSObject.Properties.Name -contains 'allowMultiple' -and $target.allowMultiple -isnot [bool]) {
+                    $validationErrors.Add("Component '$componentId' target '$($target.match)' has non-boolean allowMultiple.")
+                }
                 foreach ($operation in @($target.operations)) {
                     if ($null -eq $operation) {
                         continue

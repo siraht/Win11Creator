@@ -151,4 +151,12 @@ Describe "Deep customization component policy" {
         { Test-WinUtilComponentPolicy -Policy $invalid -ThrowOnError } |
             Should -Throw "*references unknown conflict component 'missing-shell'*"
     }
+
+    It "PolicyContract_NonBooleanMultipleMatchOptIn_PlantedNegative" {
+        $invalid = $script:catalog | ConvertTo-Json -Depth 20 | ConvertFrom-Json
+        $invalid.components[0].targets[0] | Add-Member -NotePropertyName allowMultiple -NotePropertyValue 'yes'
+
+        { Test-WinUtilComponentPolicy -Policy $invalid -ThrowOnError } |
+            Should -Throw '*non-boolean allowMultiple*'
+    }
 }

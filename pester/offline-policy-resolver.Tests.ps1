@@ -103,6 +103,41 @@ Describe 'Offline image policy resolver' {
             Should -Throw '*is ambiguous (2 matches)*'
     }
 
+    It 'allows an explicitly declared multi-package high-risk concept' {
+        $inventory = New-TestInventory @(
+            (New-TestItem Package 'Microsoft-Windows-Client-AIX-One~31bf~amd64~~10.0.1.0'),
+            (New-TestItem Package 'Microsoft-Windows-Client-AIX-Two~31bf~amd64~~10.0.1.0')
+        )
+        $policy = @([pscustomobject]@{
+            Id = 'declared-aix-family'; Action = 'Remove'; Risk = 'Expert'; Reason = 'Declared package family.'
+            Targets = @([pscustomobject]@{
+                Kind = 'Package'; Match = 'Microsoft-Windows-Client-AIX-*'; MatchType = 'wildcard'; AllowMultiple = $true
+            })
+        })
+
+        $plan = Resolve-WinUtilOfflineImagePolicy -Inventory $inventory -Policy $policy
+
+        @($plan.Decisions | Where-Object Action -eq 'Remove').Count | Should -Be 2
+        @($plan.Decisions.PolicyId | Sort-Object -Unique) | Should -Be @('declared-aix-family')
+    }
+
+    It 'permits broad high-risk protection because it cannot delete matched items' {
+        $inventory = New-TestInventory @(
+            (New-TestItem Package 'Microsoft-Windows-StartMenuExperienceHost-One~31bf~amd64~~10.0.1.0'),
+            (New-TestItem Package 'Microsoft-Windows-StartMenuExperienceHost-Two~31bf~amd64~~10.0.1.0')
+        )
+        $policy = @([pscustomobject]@{
+            Id = 'protected-shell-family'; Action = 'Protected'; Risk = 'Expert'; Reason = 'Protect the shell family.'
+            Targets = @([pscustomobject]@{
+                Kind = 'Package'; Match = 'Microsoft-Windows-StartMenuExperienceHost-*'; MatchType = 'wildcard'
+            })
+        })
+
+        $plan = Resolve-WinUtilOfflineImagePolicy -Inventory $inventory -Policy $policy
+
+        @($plan.Decisions | Where-Object Action -eq 'Protected').Count | Should -Be 2
+    }
+
     It 'formats a human-readable non-destructive dry-run plan' {
         $item = New-TestItem Capability 'OpenSSH.Client~~~~0.0.1.0'
         $inventory = New-TestInventory @($item)

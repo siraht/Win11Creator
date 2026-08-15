@@ -72,7 +72,10 @@ function Resolve-WinUtilOfflineImagePolicy {
 
         foreach ($target in @($rule.Targets)) {
             $targetMatches = @($Inventory.Items | Where-Object { Test-WinUtilInventoryTargetMatch -Item $_ -Target $target })
-            if ($targetMatches.Count -gt 1 -and [string]$rule.Risk -in @('High', 'Expert')) {
+            if ($targetMatches.Count -gt 1 -and
+                $ruleAction -in @('Remove', 'Disable') -and
+                [string]$rule.Risk -in @('High', 'Expert') -and
+                $target.AllowMultiple -ne $true) {
                 throw "High-risk policy '$($rule.Id)' target '$($target.Match)' is ambiguous ($($targetMatches.Count) matches)."
             }
             foreach ($match in $targetMatches) {

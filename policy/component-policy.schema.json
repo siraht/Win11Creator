@@ -106,6 +106,7 @@
         },
         "match": { "type": "string", "minLength": 1 },
         "matchType": { "$ref": "#/$defs/matchType" },
+        "allowMultiple": { "type": "boolean" },
         "operations": { "type": "array", "items": { "$ref": "#/$defs/operation" } }
       },
       "additionalProperties": false

@@ -37,7 +37,8 @@
         {
           "kind": "package",
           "match": "Microsoft-Windows-Search-*",
-          "matchType": "wildcard"
+          "matchType": "wildcard",
+          "allowMultiple": true
         }
       ],
       "protects": [],
@@ -202,7 +203,8 @@
         {
           "kind": "package",
           "match": "Microsoft-Windows-Windows-Defender-*",
-          "matchType": "wildcard"
+          "matchType": "wildcard",
+          "allowMultiple": true
         }
       ],
       "protects": [],
@@ -358,12 +360,14 @@
         {
           "kind": "package",
           "match": "Microsoft-Windows-Client-CoreAI-*",
-          "matchType": "wildcard"
+          "matchType": "wildcard",
+          "allowMultiple": true
         },
         {
           "kind": "package",
           "match": "Microsoft-Windows-Client-AIX-*",
-          "matchType": "wildcard"
+          "matchType": "wildcard",
+          "allowMultiple": true
         }
       ],
       "protects": [],
