@@ -38,6 +38,7 @@ function Invoke-WinUtilISOScript {
         $ActionBundle,
         [AllowEmptyCollection()][object[]]$RegistryAction = @(),
         [string]$ManifestDirectory = '',
+        [string]$DriverDirectory = '',
         [psobject]$OfflineServicingSession,
         [scriptblock]$Log = { param($m) Write-Output $m }
     )
@@ -666,6 +667,13 @@ $appxList
 
     Write-WinUtilISOEditionConfig -ContentRoot $ISOContentsDir -EditionId $InstallEditionId -Logger $Log
 
+    if ($DriverDirectory -and $InjectCurrentSystemDrivers) {
+        throw 'Specify either DriverDirectory or InjectCurrentSystemDrivers, not both.'
+    }
+    if ($DriverDirectory -and -not (Test-Path -LiteralPath $DriverDirectory -PathType Container)) {
+        throw "Driver directory was not found: $DriverDirectory"
+    }
+
     if ($InjectCurrentSystemDrivers) {
         Add-WinUtilISOStagedDrivers -ContentRoot $ISOContentsDir -Logger $Log -InstallImagePath $InstallImagePath -InstallImageIndex $InstallImageIndex -ResolvedPlan $ResolvedPlan -RegistryAction $RegistryAction -ManifestDirectory $ManifestDirectory -OfflineServicingSession $OfflineServicingSession
     } elseif ($ResolvedPlan) {
@@ -673,6 +681,6 @@ $appxList
             $ManifestDirectory = Join-Path $ISOContentsDir 'WinUtil-Manifests'
         }
         $mountDir = Join-Path (Split-Path -Path $ISOContentsDir -Parent) 'wim_mount'
-        Invoke-WinUtilOfflineServicingTransaction -InstallImagePath $InstallImagePath -ImageIndex $InstallImageIndex -ResolvedPlan $ResolvedPlan -MountPath $mountDir -ManifestDirectory $ManifestDirectory -RegistryAction $RegistryAction -SecurityOperation @($ActionBundle.SecurityOperations) -Session $OfflineServicingSession -Log $Log | Out-Null
+        Invoke-WinUtilOfflineServicingTransaction -InstallImagePath $InstallImagePath -ImageIndex $InstallImageIndex -ResolvedPlan $ResolvedPlan -MountPath $mountDir -ManifestDirectory $ManifestDirectory -DriverDirectory $DriverDirectory -RegistryAction $RegistryAction -SecurityOperation @($ActionBundle.SecurityOperations) -Session $OfflineServicingSession -Log $Log | Out-Null
     }
 }
