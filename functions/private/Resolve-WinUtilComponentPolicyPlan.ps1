@@ -73,11 +73,14 @@ function Resolve-WinUtilComponentPolicyPlan {
         ProtectedComponentIds = @($evaluatedSafety.ProtectedComponentIds)
         Conflicts = @($allConflicts)
     }
+    $resolvedPlan = Resolve-WinUtilOfflineImagePolicy -Inventory $Inventory -Policy @($resolverRules)
+    $resolvedPlan | Add-Member -NotePropertyName IsAllowed -NotePropertyValue $safety.IsAllowed
+    $resolvedPlan | Add-Member -NotePropertyName Safety -NotePropertyValue $safety
 
     [pscustomobject]@{
         ProfileId = [string]$ComponentProfile.id
         Rules = @($resolverRules)
         Safety = $safety
-        ResolvedPlan = Resolve-WinUtilOfflineImagePolicy -Inventory $Inventory -Policy @($resolverRules)
+        ResolvedPlan = $resolvedPlan
     }
 }

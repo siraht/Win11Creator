@@ -440,15 +440,7 @@
       "protects": [
         "client-cbs"
       ],
-      "conflicts": [
-        {
-          "action": "protected",
-          "with": "windows-search",
-          "withAction": "disable",
-          "severity": "likely-breakage",
-          "reason": "The protected modern shell may lose search functionality when Windows Search is disabled."
-        }
-      ],
+      "conflicts": [],
       "requires": [
         "client-cbs"
       ],
@@ -472,15 +464,7 @@
         }
       ],
       "protects": [],
-      "conflicts": [
-        {
-          "action": "protected",
-          "with": "windows-ai",
-          "withAction": "remove",
-          "severity": "forbidden-unless-expert",
-          "reason": "Protected Client CBS payloads may overlap Windows AI removal targets."
-        }
-      ],
+      "conflicts": [],
       "requires": [],
       "description": "Supplies core client shell and component-based servicing integration.",
       "reason": "Modern shell and servicing compatibility depend on Client.CBS.",
@@ -509,15 +493,7 @@
       "protects": [
         "desktop-app-installer"
       ],
-      "conflicts": [
-        {
-          "action": "protected",
-          "with": "uac",
-          "withAction": "disable",
-          "severity": "forbidden-unless-expert",
-          "reason": "Protected Microsoft Store infrastructure relies on supported UAC behavior."
-        }
-      ],
+      "conflicts": [],
       "requires": [
         "desktop-app-installer"
       ],
@@ -771,15 +747,7 @@
         }
       ],
       "protects": [],
-      "conflicts": [
-        {
-          "action": "protected",
-          "with": "telemetry-consumer-content",
-          "withAction": "disable",
-          "severity": "warning",
-          "reason": "Windows Error Reporting diagnostics may be reduced when telemetry is disabled."
-        }
-      ],
+      "conflicts": [],
       "requires": [],
       "description": "Captures application and system failure reports and dump information.",
       "reason": "Crash diagnostics are valuable for DAW and plugin troubleshooting.",

@@ -32,6 +32,9 @@ Describe 'Component policy plan integration' {
 
         ($defaultResult.ResolvedPlan.Decisions | Where-Object Name -eq 'Microsoft.WindowsFeedbackHub').Action | Should -Be 'Keep'
         ($leanResult.ResolvedPlan.Decisions | Where-Object Name -eq 'Microsoft.WindowsFeedbackHub').Action | Should -Be 'Remove'
+        $leanResult.Safety.Conflicts | Where-Object {
+            $_.ComponentId -eq 'uac' -and $_.RelatedComponentId -eq 'microsoft-store-infrastructure'
+        } | Should -HaveCount 1
     }
 
     It 'PolicyAdapter_KeepsUnknownInventoryAndProtectsLeanNfs' {
@@ -49,6 +52,8 @@ Describe 'Component policy plan integration' {
         }
 
         $result.Safety.IsAllowed | Should -BeFalse
+        $result.ResolvedPlan.IsAllowed | Should -BeFalse
+        [object]::ReferenceEquals($result.ResolvedPlan.Safety, $result.Safety) | Should -BeTrue
         $result.Safety.Conflicts | Where-Object {
             $_.ComponentId -eq 'modern-shell' -and
             $_.Severity -eq 'forbidden-unless-expert' -and
@@ -62,6 +67,8 @@ Describe 'Component policy plan integration' {
         } -ExpertMode
 
         $result.Safety.IsAllowed | Should -BeTrue
+        $result.ResolvedPlan.IsAllowed | Should -BeTrue
+        $result.ResolvedPlan.Safety.Conflicts | Should -Not -BeNullOrEmpty
         $result.Safety.Conflicts | Where-Object {
             $_.ComponentId -eq 'modern-shell' -and
             $_.Severity -eq 'forbidden-unless-expert' -and
