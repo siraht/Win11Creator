@@ -22,6 +22,7 @@ Describe 'Component policy plan integration' {
                 [pscustomobject]@{ Kind = 'Feature'; Name = 'ServicesForNFS-ClientOnly'; Identity = 'ServicesForNFS-ClientOnly'; State = 'Enabled' }
                 [pscustomobject]@{ Kind = 'Package'; Name = 'Microsoft-Windows-StartMenuExperienceHost-Package'; Identity = 'Microsoft-Windows-StartMenuExperienceHost-Package~31bf~amd64~~10.0.1.0'; State = 'Installed' }
                 [pscustomobject]@{ Kind = 'Package'; Name = 'Contoso.Future-Package'; Identity = 'Contoso.Future-Package~31bf~amd64~~1.0.0.0'; State = 'Installed' }
+                [pscustomobject]@{ Kind = 'SystemApp'; Name = 'MicrosoftWindows.Client.WebExperience_cw5n1h2txyewy'; Identity = 'MicrosoftWindows.Client.WebExperience_cw5n1h2txyewy'; State = 'Discovered' }
             )
         }
     }
@@ -43,6 +44,7 @@ Describe 'Component policy plan integration' {
         $unknown = $result.ResolvedPlan.Decisions | Where-Object Name -eq 'Contoso.Future-Package'
         $unknown.Action | Should -Be 'Manual'
         $unknown.Reason | Should -Match 'kept unless explicitly overridden'
+        ($result.ResolvedPlan.Decisions | Where-Object Kind -eq 'SystemApp').Action | Should -Be 'Manual'
         ($result.ResolvedPlan.Decisions | Where-Object Name -eq 'ServicesForNFS-ClientOnly').Action | Should -Be 'Protected'
     }
 
