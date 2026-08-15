@@ -31,6 +31,18 @@ Get-ChildItem config | ForEach-Object {
     $script += "`$sync.configs.$($_.BaseName) = @'`r`n$json`r`n'@ | ConvertFrom-Json"
 }
 
+$componentPolicy = [ordered]@{
+    schema = Get-Content -Path policy\component-policy.schema.json -Raw | ConvertFrom-Json
+    catalog = Get-Content -Path policy\component-catalog.json -Raw | ConvertFrom-Json
+    profiles = [ordered]@{}
+}
+Get-ChildItem -Path policy\profiles -Filter *.json | Sort-Object Name | ForEach-Object {
+    $componentPolicy.profiles[$_.BaseName] = Get-Content -Path $_.FullName -Raw | ConvertFrom-Json
+}
+$componentPolicyJson = $componentPolicy | ConvertTo-Json -Depth 20
+$sync.configs.componentPolicy = [pscustomobject]$componentPolicy
+$script += "`$sync.configs.componentPolicy = @'`r`n$componentPolicyJson`r`n'@ | ConvertFrom-Json"
+
 $xaml = Get-Content -Path xaml\inputXML.xaml -Raw
 $script += "`$inputXML = @'`r`n$xaml`r`n'@"
 

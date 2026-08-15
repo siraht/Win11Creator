@@ -130,6 +130,7 @@ Describe "Compiled WinUtil sanity" {
         $content = Get-Content -Path $script:compiledPath -Raw
         $requiredSnippets = @(
             ('$sync.configs.applications = @' + "'"),
+            ('$sync.configs.componentPolicy = @' + "'"),
             ('$inputXML = @' + "'"),
             ('$WinUtilAutounattendXml = @' + "'"),
             "SessionStateVariableEntry -ArgumentList 'sync'",
@@ -143,6 +144,16 @@ Describe "Compiled WinUtil sanity" {
                 throw "Compiled script is missing expected content: $snippet"
             }
         }
+    }
+
+    It "embeds component policy documents for filesystem-independent runtime use" {
+        $content = Get-Content -Path $script:compiledPath -Raw
+        $content | Should -Match '"documentType":\s*"component-catalog"'
+        $content | Should -Match '"default-winutil"'
+        $content | Should -Match '"lean-daw"'
+
+        $adapterContent = Get-Content -Path (Join-Path $script:repoRoot "functions/private/Resolve-WinUtilComponentPolicyPlan.ps1") -Raw
+        $adapterContent | Should -Not -Match 'Get-Content|Import-WinUtilComponentPolicy'
     }
 
     It "transforms applications config keys with WPFInstall prefixes" {

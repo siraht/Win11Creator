@@ -56,10 +56,11 @@ WinUtil is a Windows PowerShell utility with a WPF interface. The repository is 
 2. Append every file under `functions/` recursively.
 3. Convert each `config/*.json` file into embedded `$sync.configs` objects.
 4. Special-case `config/applications.json` so keys receive the `WPFInstall` prefix in compiled config.
-5. Embed `xaml/inputXML.xaml` into `$inputXML`.
-6. Embed `tools/autounattend.xml` into `$WinUtilAutounattendXml`.
-7. Append `scripts/main.ps1`.
-8. Write the result to root `winutil.ps1`.
+5. Embed the component policy schema, catalog, and profiles from `policy/` into `$sync.configs.componentPolicy`.
+6. Embed `xaml/inputXML.xaml` into `$inputXML`.
+7. Embed `tools/autounattend.xml` into `$WinUtilAutounattendXml`.
+8. Append `scripts/main.ps1`.
+9. Write the result to root `winutil.ps1`.
 
 Because the final script is concatenated, code cannot rely on runtime module imports or source-relative dot-sourcing unless the compiled script will also contain the required code/data.
 
