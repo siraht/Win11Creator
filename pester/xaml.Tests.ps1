@@ -476,6 +476,7 @@ Describe "XAML and sync wiring" {
             "Win11ISOAdvancedPackageRows",
             "Win11ISOSelectedProfileId",
             "Win11ISORegistryActions",
+            "Win11ISOActionBundle",
             "Win11ISOPolicyHandoff",
             "Win11ISOManualOverrides",
             "Win11ISOOfflineSession",
