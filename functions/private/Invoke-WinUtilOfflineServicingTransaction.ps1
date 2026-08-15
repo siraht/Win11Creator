@@ -282,6 +282,69 @@ function Invoke-WinUtilOfflineServicingTransaction {
         }
     }
 
+    function Assert-WinUtilGenericBeforeState {
+        param ($Plan, $BeforeInventory)
+        foreach ($decision in @($Plan.Decisions | Where-Object {
+            [string]$_.Action -in @('Remove', 'Disable') -and [string]$_.PolicyId -ne 'defender'
+        })) {
+            $present = @($BeforeInventory.Items | Where-Object {
+                [string]$_.Kind -eq [string]$decision.Kind -and [string]$_.Identity -eq [string]$decision.Identity
+            })
+            $requiredState = switch ([string]$decision.Kind) {
+                'AppX' { 'Provisioned' }
+                'Capability' { 'Installed' }
+                'Feature' { 'Enabled' }
+                'Package' { 'Installed' }
+            }
+            if ($present.Count -ne 1 -or [string]$present[0].State -ne $requiredState) {
+                throw "Offline servicing precondition failed: '$($decision.Kind)|$($decision.Identity)' is not uniquely present in state '$requiredState'."
+            }
+        }
+    }
+
+    function Assert-WinUtilGenericAfterState {
+        param ($Plan, $BeforeInventory, $AfterInventory)
+        foreach ($decision in @($Plan.Decisions)) {
+            $beforeMatches = @($BeforeInventory.Items | Where-Object {
+                [string]$_.Kind -eq [string]$decision.Kind -and [string]$_.Identity -eq [string]$decision.Identity
+            })
+            $afterMatches = @($AfterInventory.Items | Where-Object {
+                [string]$_.Kind -eq [string]$decision.Kind -and [string]$_.Identity -eq [string]$decision.Identity
+            })
+            if ([string]$decision.Action -in @('Keep', 'Protected', 'Manual')) {
+                if ($beforeMatches.Count -eq 1 -and ($afterMatches.Count -ne 1 -or [string]$afterMatches[0].State -ne [string]$beforeMatches[0].State)) {
+                    throw "Offline servicing collateral verification failed: '$($decision.Action)' target '$($decision.Kind)|$($decision.Identity)' changed or disappeared."
+                }
+                continue
+            }
+            if ([string]$decision.PolicyId -eq 'defender') { continue }
+            switch ("$($decision.Kind)|$($decision.Action)") {
+                'AppX|Remove' {
+                    if ($afterMatches.Count -ne 0) { throw "Offline servicing verification failed: AppX '$($decision.Identity)' remains provisioned." }
+                }
+                'Capability|Remove' {
+                    if ($afterMatches.Count -gt 1 -or ($afterMatches.Count -eq 1 -and [string]$afterMatches[0].State -ne 'NotPresent')) {
+                        throw "Offline servicing verification failed: capability '$($decision.Identity)' is not absent or NotPresent."
+                    }
+                }
+                'Feature|Remove' {
+                    if ($afterMatches.Count -gt 1 -or ($afterMatches.Count -eq 1 -and [string]$afterMatches[0].State -ne 'DisabledWithPayloadRemoved')) {
+                        throw "Offline servicing verification failed: feature '$($decision.Identity)' is not absent or DisabledWithPayloadRemoved."
+                    }
+                }
+                'Feature|Disable' {
+                    if ($afterMatches.Count -ne 1 -or [string]$afterMatches[0].State -ne 'Disabled') {
+                        throw "Offline servicing verification failed: feature '$($decision.Identity)' is not Disabled."
+                    }
+                }
+                'Package|Remove' {
+                    if ($afterMatches.Count -ne 0) { throw "Offline servicing verification failed: package '$($decision.Identity)' remains installed." }
+                }
+                default { throw "Offline servicing has no after-state contract for '$($decision.Kind)|$($decision.Action)'." }
+            }
+        }
+    }
+
     if ([IO.Path]::GetExtension($InstallImagePath) -ne '.wim') { throw 'Offline servicing requires install.wim; install.esd cannot be serviced in place.' }
     if (-not (Test-Path -LiteralPath $InstallImagePath)) { throw "install.wim was not found: $InstallImagePath" }
     if ([string]$ResolvedPlan.SchemaVersion -ne '1.0' -or $null -eq $ResolvedPlan.Decisions) { throw 'ResolvedPlan must use schema version 1.0 and contain Decisions.' }
@@ -335,6 +398,7 @@ function Invoke-WinUtilOfflineServicingTransaction {
             $before = $startedSession.Inventory
         }
         Assert-WinUtilDefenderBeforeState -Targets $defenderTargets -BeforeInventory $before
+        Assert-WinUtilGenericBeforeState -Plan $ResolvedPlan -BeforeInventory $before
         $beforeManifest = [pscustomobject][ordered]@{
             SchemaVersion = '1.0'; ManifestType = 'ImageInventoryBefore'; Source = $before.Source; Items = @($before.Items)
         }
@@ -384,6 +448,7 @@ function Invoke-WinUtilOfflineServicingTransaction {
 
         $after = Get-WinUtilOfflineImageInventory -MountedImagePath $MountPath -SourceImagePath $InstallImagePath -ImageIndex $ImageIndex -ImageName $ImageName -SystemApp $SystemAppDiscovery
         Assert-WinUtilDefenderAfterState -Targets $defenderTargets -AfterInventory $after
+        Assert-WinUtilGenericAfterState -Plan $ResolvedPlan -BeforeInventory $before -AfterInventory $after
         $diff = Get-WinUtilOfflineInventoryDiff -Before $before -After $after
         $afterManifest = [pscustomobject][ordered]@{
             SchemaVersion = '1.0'; ManifestType = 'ImageInventoryAfter'; Source = $after.Source; Items = @($after.Items)

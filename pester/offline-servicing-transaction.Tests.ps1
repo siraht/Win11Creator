@@ -414,4 +414,67 @@ Describe 'Offline servicing transaction boundary' {
         Should -Invoke Dismount-WindowsImage -Times 1 -Exactly -ParameterFilter { $Discard }
         Should -Invoke Dismount-WindowsImage -Times 0 -Exactly -ParameterFilter { $Save }
     }
+
+    It 'discards when a successful generic cmdlet is a no-op' {
+        $app = [pscustomobject]@{ Kind = 'AppX'; Name = 'Microsoft.Copilot'; Identity = 'Microsoft.Copilot_1.0_neutral_test'; State = 'Provisioned' }
+        $script:beforeItems = @($app)
+        $script:afterItems = @($app)
+        $decision = New-TransactionDecision AppX $app.Identity Remove
+        $decision.PolicyId = 'copilot'
+        $plan = [pscustomobject]@{ SchemaVersion = '1.0'; Safety = [pscustomobject]@{ IsAllowed = $true }; Decisions = @($decision) }
+
+        { Invoke-WinUtilOfflineServicingTransaction -InstallImagePath $script:wimPath -ImageIndex 6 -ResolvedPlan $plan -MountPath $script:mountPath -ManifestDirectory $script:manifestPath } |
+            Should -Throw '*verification failed*remains provisioned*'
+        Should -Invoke Remove-AppxProvisionedPackage -Times 1 -Exactly
+        Should -Invoke Dismount-WindowsImage -Times 1 -Exactly -ParameterFilter { $Discard }
+        Should -Invoke Dismount-WindowsImage -Times 0 -Exactly -ParameterFilter { $Save }
+    }
+
+    It 'discards when protected collateral disappears' {
+        $remove = [pscustomobject]@{ Kind = 'Package'; Name = 'Microsoft-Windows-Client-AIX-Package'; Identity = 'Microsoft-Windows-Client-AIX-Package~test'; State = 'Installed' }
+        $protected = [pscustomobject]@{ Kind = 'Package'; Name = 'Microsoft-Windows-Client-CBS-Package'; Identity = 'Microsoft-Windows-Client-CBS-Package~test'; State = 'Installed' }
+        $script:beforeItems = @($remove, $protected)
+        $script:afterItems = @()
+        $removeDecision = New-TransactionDecision Package $remove.Identity Remove
+        $removeDecision.PolicyId = 'windows-ai'
+        $protectedDecision = New-TransactionDecision Package $protected.Identity Protected
+        $protectedDecision.PolicyId = 'client-cbs'
+        $plan = [pscustomobject]@{ SchemaVersion = '1.0'; Safety = [pscustomobject]@{ IsAllowed = $true }; Decisions = @($removeDecision, $protectedDecision) }
+
+        { Invoke-WinUtilOfflineServicingTransaction -InstallImagePath $script:wimPath -ImageIndex 6 -ResolvedPlan $plan -MountPath $script:mountPath -ManifestDirectory $script:manifestPath } |
+            Should -Throw '*collateral verification failed*Protected*Client-CBS*'
+        Should -Invoke Dismount-WindowsImage -Times 1 -Exactly -ParameterFilter { $Discard }
+    }
+
+    It 'enforces absent Lean concept targets while preserving WebView2 and Client CBS' {
+        $conceptItems = @(
+            [pscustomobject]@{ Kind = 'AppX'; Name = 'MicrosoftWindows.Client.WebExperience'; Identity = 'WebExperience_1.0'; State = 'Provisioned'; PolicyId = 'widgets-webexperience' }
+            [pscustomobject]@{ Kind = 'AppX'; Name = 'Microsoft.Copilot'; Identity = 'Copilot_1.0'; State = 'Provisioned'; PolicyId = 'copilot' }
+            [pscustomobject]@{ Kind = 'AppX'; Name = 'Microsoft.WindowsFeedbackHub'; Identity = 'Feedback_1.0'; State = 'Provisioned'; PolicyId = 'feedback-hub' }
+            [pscustomobject]@{ Kind = 'AppX'; Name = 'Microsoft.BingNews'; Identity = 'BingNews_1.0'; State = 'Provisioned'; PolicyId = 'consumer-appx' }
+            [pscustomobject]@{ Kind = 'AppX'; Name = 'Microsoft.XboxApp'; Identity = 'Xbox_1.0'; State = 'Provisioned'; PolicyId = 'xbox-gaming' }
+            [pscustomobject]@{ Kind = 'AppX'; Name = 'Microsoft.OneDriveSync'; Identity = 'OneDrive_1.0'; State = 'Provisioned'; PolicyId = 'onedrive' }
+            [pscustomobject]@{ Kind = 'Package'; Name = 'Microsoft-Windows-Client-AIX-Package'; Identity = 'AIX~test'; State = 'Installed'; PolicyId = 'windows-ai' }
+            [pscustomobject]@{ Kind = 'Package'; Name = 'Microsoft-Windows-OneDrive-Package'; Identity = 'OneDrivePackage~test'; State = 'Installed'; PolicyId = 'onedrive' }
+        )
+        $protectedItems = @(
+            [pscustomobject]@{ Kind = 'Package'; Name = 'Microsoft-Windows-WebView2Runtime-Package'; Identity = 'WebView2~test'; State = 'Installed'; PolicyId = 'webview2' }
+            [pscustomobject]@{ Kind = 'Package'; Name = 'Microsoft-Windows-Client-CBS-Package'; Identity = 'ClientCBS~test'; State = 'Installed'; PolicyId = 'client-cbs' }
+        )
+        $script:beforeItems = @($conceptItems) + @($protectedItems)
+        $script:afterItems = @($protectedItems)
+        $decisions = @($conceptItems | ForEach-Object {
+            $decision = New-TransactionDecision $_.Kind $_.Identity Remove; $decision.PolicyId = $_.PolicyId; $decision
+        }) + @($protectedItems | ForEach-Object {
+            $decision = New-TransactionDecision $_.Kind $_.Identity Protected; $decision.PolicyId = $_.PolicyId; $decision
+        })
+        $plan = [pscustomobject]@{ SchemaVersion = '1.0'; Safety = [pscustomobject]@{ IsAllowed = $true }; Decisions = $decisions }
+
+        Invoke-WinUtilOfflineServicingTransaction -InstallImagePath $script:wimPath -ImageIndex 6 -ResolvedPlan $plan -MountPath $script:mountPath -ManifestDirectory $script:manifestPath | Out-Null
+
+        Should -Invoke Remove-AppxProvisionedPackage -Times 6 -Exactly
+        Should -Invoke Remove-WindowsPackage -Times 2 -Exactly
+        Should -Invoke Remove-WindowsPackage -Times 0 -Exactly -ParameterFilter { $PackageName -in @('WebView2~test', 'ClientCBS~test') }
+        Should -Invoke Dismount-WindowsImage -Times 1 -Exactly -ParameterFilter { $Save }
+    }
 }
