@@ -253,6 +253,7 @@ function Resolve-WinUtilComponentPolicyPlan {
         ProfileId = [string]$ComponentProfile.id
         Rules = @($resolverRules)
         Safety = $safety
+        BaseResolvedPlan = $baseResolvedPlan
         ResolvedPlan = $resolvedPlan
         ActionBundle = $actionBundle
     }

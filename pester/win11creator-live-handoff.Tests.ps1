@@ -36,13 +36,28 @@ Describe 'Win11 Creator live policy handoff' {
             WPFWin11ISOExpertWarning = New-TestControl
             WPFWin11ISOPolicyHandoffStatus = New-TestControl
             WPFWin11ISOModifyButton = New-TestControl
+            WPFWin11ISOSummaryRemove = New-TestControl
+            WPFWin11ISOSummaryDisable = New-TestControl
+            WPFWin11ISOSummaryProtected = New-TestControl
+            WPFWin11ISOSummaryRisk = New-TestControl
+            WPFWin11ISOExclusiveChoices = New-TestControl
+            WPFWin11ISOAppsItems = New-TestControl
+            WPFWin11ISOWindowsComponentsItems = New-TestControl
+            WPFWin11ISOFeaturesItems = New-TestControl
+            WPFWin11ISOPrivacyItems = New-TestControl
+            WPFWin11ISODeveloperItems = New-TestControl
         })
     }
 
     BeforeEach {
         $sync.Win11ISOSelectedProfileId = 'default-winutil'
+        $sync.Win11ISOImageInventory = $script:inventory
         $sync.Win11ISOManualOverrides = @()
         $sync.Win11ISOComponentActionOverrides = @{}
+        $sync.Win11ISOOfflineSession = [pscustomobject]@{
+            State = 'Mounted'; InstallImagePath = 'copied-install.wim'; ImageIndex = 6
+            OfflineSystemSelect = [pscustomobject]@{ Current = 1 }
+        }
         $sync.WPFWin11ISOExpertMode.IsChecked = $false
         $sync.WPFWin11ISOModifyButton.IsEnabled = $false
     }
@@ -122,5 +137,64 @@ Describe 'Win11 Creator live policy handoff' {
         } | Should -HaveCount 1
         $result.ActionBundle.RegistryActions.Name | Should -Contain 'ConsentPromptBehaviorAdmin'
         $sync.Win11ISOActionBundle | Should -Be $result.ActionBundle
+    }
+
+    It 're-resolves profile, summary, groups, selector, and readiness from a mounted analysis' {
+        $sync.WPFWin11ISOExpertMode.IsChecked = $true
+
+        Update-WinUtilComponentPolicyUI -SelectedProfileId 'lean-daw'
+
+        $sync.Win11ISOSelectedProfileId | Should -Be 'lean-daw'
+        ($sync.Win11ISOResolvedPlan.Decisions | Where-Object Name -eq 'Microsoft.WindowsFeedbackHub').Action | Should -Be 'Remove'
+        $sync.WPFWin11ISOSummaryRemove.Text | Should -BeGreaterThan 0
+        @($sync.WPFWin11ISOAppsItems.ItemsSource).Count | Should -BeGreaterThan 0
+        @($sync.WPFWin11ISOAdvancedPackageItems.ItemsSource).Count | Should -Be 3
+        $sync.Win11ISOPolicyHandoff.IsReady | Should -BeTrue
+        $sync.WPFWin11ISOModifyButton.IsEnabled | Should -BeTrue
+    }
+
+    It 'plants the negative that stale inventory cannot retain a ready build state' {
+        Resolve-WinUtilComponentPolicyHandoff | Out-Null
+        $sync.Win11ISOOfflineSession.ImageIndex = 5
+
+        Update-WinUtilComponentPolicyUI -SelectedProfileId 'default-winutil'
+
+        $sync.Win11ISOResolvedPlan | Should -BeNullOrEmpty
+        $sync.Win11ISOActionBundle | Should -BeNullOrEmpty
+        $sync.Win11ISOPolicyHandoff.IsReady | Should -BeFalse
+        $sync.Win11ISOPolicyHandoff.Status | Should -Match '^Blocked:.*does not match'
+        $sync.WPFWin11ISOModifyButton.IsEnabled | Should -BeFalse
+    }
+
+    It 'clears inventory overrides and readiness before an analysis refresh' {
+        Resolve-WinUtilComponentPolicyHandoff | Out-Null
+        $sync.Win11ISOManualOverrides = @([pscustomobject]@{
+            Kind = 'AppX'; Identity = 'Microsoft.WindowsFeedbackHub_1.0_neutral_~_8wekyb3d8bbwe'; Action = 'Keep'
+        })
+
+        Clear-WinUtilComponentPolicyAnalysisState
+
+        $sync.Win11ISOImageInventory | Should -BeNullOrEmpty
+        $sync.Win11ISOManualOverrides | Should -BeNullOrEmpty
+        $sync.Win11ISOResolvedPlan | Should -BeNullOrEmpty
+        $sync.Win11ISOPolicyHandoff.IsReady | Should -BeFalse
+        $sync.WPFWin11ISOModifyButton.IsEnabled | Should -BeFalse
+    }
+
+    It 'plants the negative that leaving Expert mode blocks a selected protected override' {
+        $sync.Win11ISOManualOverrides = @([pscustomobject]@{
+            Kind = 'Package'; Identity = 'Microsoft-Windows-StartMenuExperienceHost-Package~31bf~amd64~~10.0.1.0'; Action = 'Remove'
+        })
+        $sync.WPFWin11ISOExpertMode.IsChecked = $true
+        Resolve-WinUtilComponentPolicyHandoff | Out-Null
+        $sync.Win11ISOPolicyHandoff.IsReady | Should -BeTrue
+
+        $sync.WPFWin11ISOExpertMode.IsChecked = $false
+        Resolve-WinUtilComponentPolicyHandoff | Out-Null
+
+        $sync.Win11ISOPolicyHandoff.IsReady | Should -BeFalse
+        $sync.WPFWin11ISOModifyButton.IsEnabled | Should -BeFalse
+        $sync.WPFWin11ISOExpertWarning.Visibility | Should -Be 'Visible'
+        $sync.WPFWin11ISOExpertWarning.Text | Should -Match 'Blocked by component safety policy'
     }
 }

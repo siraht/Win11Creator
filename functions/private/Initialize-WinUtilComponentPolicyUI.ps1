@@ -25,11 +25,13 @@ function New-WinUtilComponentPolicyPresentation {
         [System.Collections.IDictionary]$ActionOverrides = @{}
     )
 
-    $supportedProfileIds = @('default-winutil', 'lean-daw')
+    $preferredProfileIds = @('default-winutil', 'lean-daw')
     $profileOptions = @(
         $Profiles |
-            Where-Object { $_.id -in $supportedProfileIds } |
-            Sort-Object { [array]::IndexOf($supportedProfileIds, [string]$_.id) } |
+            Sort-Object @{ Expression = {
+                $preferredIndex = [array]::IndexOf($preferredProfileIds, [string]$_.id)
+                if ($preferredIndex -ge 0) { $preferredIndex } else { $preferredProfileIds.Count }
+            } }, @{ Expression = { [string]$_.name } } |
             ForEach-Object { [pscustomobject]@{ Id = [string]$_.id; Name = [string]$_.name } }
         [pscustomobject]@{ Id = 'custom'; Name = 'Custom' }
     )
@@ -169,6 +171,7 @@ function New-WinUtilAdvancedPackageSelectorModel {
     param (
         [Parameter(Mandatory)][psobject]$ImageInventory,
         [psobject]$ResolvedPlan,
+        [psobject]$RecommendationPlan,
         [AllowEmptyCollection()][object[]]$ManualOverride = @(),
         [switch]$ExpertMode
     )
@@ -181,25 +184,34 @@ function New-WinUtilAdvancedPackageSelectorModel {
     foreach ($decision in @($ResolvedPlan.Decisions)) {
         $decisionByKey['{0}|{1}' -f [string]$decision.Kind, [string]$decision.Identity] = $decision
     }
+    $recommendationByKey = @{}
+    foreach ($decision in @($RecommendationPlan.Decisions)) {
+        $recommendationByKey['{0}|{1}' -f [string]$decision.Kind, [string]$decision.Identity] = $decision
+    }
 
     foreach ($item in @($ImageInventory.Items | Sort-Object Kind, Identity)) {
         $key = '{0}|{1}' -f [string]$item.Kind, [string]$item.Identity
-        $decision = $decisionByKey[$key]
-        $isUnknown = $null -eq $decision -or (
-            [string]$decision.Action -eq 'Manual' -and [string]::IsNullOrWhiteSpace([string]$decision.PolicyId)
+        $effectiveDecision = $decisionByKey[$key]
+        $recommendationDecision = if ($recommendationByKey.ContainsKey($key)) { $recommendationByKey[$key] } else { $effectiveDecision }
+        $isUnknown = $null -eq $recommendationDecision -or (
+            [string]$recommendationDecision.Action -eq 'Manual' -and [string]::IsNullOrWhiteSpace([string]$recommendationDecision.PolicyId)
         )
-        $recommendation = if ($isUnknown) { 'Manual' } else { [string]$decision.Action }
+        $recommendation = if ($isUnknown) { 'Manual' } else { [string]$recommendationDecision.Action }
         $rationale = if ($isUnknown) {
             'Unknown component; kept unless explicitly reviewed.'
         } else {
-            [string]$decision.Reason
+            [string]$recommendationDecision.Reason
         }
         $isProtected = $recommendation -eq 'Protected'
         $initialSelected = -not $isUnknown -and -not $isProtected -and $recommendation -in @('Remove', 'Disable')
         $rowOverride = @($ManualOverride | Where-Object {
             [string]$_.Kind -eq [string]$item.Kind -and [string]$_.Identity -eq [string]$item.Identity
         }) | Select-Object -First 1
-        $isSelected = if ($rowOverride) { [string]$rowOverride.Action -in @('Remove', 'Disable') } else { $initialSelected }
+        $isSelected = if ($rowOverride) {
+            [string]$rowOverride.Action -in @('Remove', 'Disable')
+        } elseif ($effectiveDecision) {
+            [string]$effectiveDecision.Action -in @('Remove', 'Disable')
+        } else { $initialSelected }
 
         [pscustomobject]@{
             Kind           = [string]$item.Kind
@@ -207,7 +219,7 @@ function New-WinUtilAdvancedPackageSelectorModel {
             Identity       = [string]$item.Identity
             Recommendation = $recommendation
             Rationale      = $rationale
-            Risk           = if ($decision) { [string]$decision.Risk } else { 'Expert' }
+            Risk           = if ($recommendationDecision) { [string]$recommendationDecision.Risk } else { 'Expert' }
             IsUnknown      = $isUnknown
             IsProtected    = $isProtected
             CanSelect      = -not $isUnknown -and (-not $isProtected -or $ExpertMode.IsPresent)
@@ -287,6 +299,7 @@ function New-WinUtilComponentPolicyHandoff {
         [psobject]$ResolvedPlan,
         [psobject]$Safety,
         [psobject]$ActionBundle,
+        [psobject]$OfflineSession,
         [Parameter()][AllowEmptyCollection()][object[]]$RegistryActions
     )
 
@@ -296,9 +309,12 @@ function New-WinUtilComponentPolicyHandoff {
     $hasRegistryActions = $null -ne $RegistryActions
     $safetyAllowed = $null -ne $Safety -and $Safety.IsAllowed -eq $true
     $actionBundleReady = $hasActionBundle -and $ActionBundle.IsReady -eq $true
-    $isReady = $hasInventory -and $hasResolvedPlan -and $hasRegistryActions -and $safetyAllowed -and $actionBundleReady
+    $sessionMatch = Test-WinUtilComponentPolicySession -ImageInventory $ImageInventory -OfflineSession $OfflineSession
+    $isReady = $hasInventory -and $hasResolvedPlan -and $hasRegistryActions -and $safetyAllowed -and $actionBundleReady -and $sessionMatch.IsValid
     $status = if (-not $hasInventory) {
         'Preview only: inventory, resolved plan, and registry actions have not been staged.'
+    } elseif (-not $sessionMatch.IsValid) {
+        "Blocked: $($sessionMatch.Reason)"
     } elseif (-not $hasResolvedPlan) {
         'Inventory loaded; the selected profile has not been resolved for servicing.'
     } elseif (-not $hasRegistryActions) {
@@ -321,9 +337,39 @@ function New-WinUtilComponentPolicyHandoff {
         HasRegistryActions = $hasRegistryActions
         SafetyAllowed = $safetyAllowed
         ActionBundleReady = $actionBundleReady
+        SessionMatchesInventory = $sessionMatch.IsValid
         IsReady = $isReady
         Status = $status
     }
+}
+
+function Test-WinUtilComponentPolicySession {
+    param (
+        [psobject]$ImageInventory,
+        [psobject]$OfflineSession
+    )
+
+    if ($null -eq $ImageInventory) { return [pscustomobject]@{ IsValid = $false; Reason = 'No image inventory is staged.' } }
+    if ($null -eq $OfflineSession -or [string]$OfflineSession.State -ne 'Mounted') {
+        return [pscustomobject]@{ IsValid = $false; Reason = 'The analyzed offline image session is not mounted.' }
+    }
+    if ([string]$ImageInventory.Source.ImagePath -ne [string]$OfflineSession.InstallImagePath -or
+        [int]$ImageInventory.Source.ImageIndex -ne [int]$OfflineSession.ImageIndex) {
+        return [pscustomobject]@{ IsValid = $false; Reason = 'The staged inventory does not match the mounted image and edition.' }
+    }
+    return [pscustomobject]@{ IsValid = $true; Reason = '' }
+}
+
+function Clear-WinUtilComponentPolicyAnalysisState {
+    <#
+    .SYNOPSIS
+        Clears inventory-scoped selections and invalidates the live servicing handoff.
+    #>
+    $sync['Win11ISOImageInventory'] = $null
+    $sync['Win11ISOManualOverrides'] = @()
+    Update-WinUtilComponentPolicyUI `
+        -SelectedProfileId ([string]$sync['Win11ISOSelectedProfileId']) `
+        -ActionOverrides $sync['Win11ISOComponentActionOverrides']
 }
 
 function Update-WinUtilComponentPolicyUI {
@@ -346,7 +392,8 @@ function Update-WinUtilComponentPolicyUI {
     $sync['Win11ISOAdvancedPackageRows'] = @()
     $handoff = New-WinUtilComponentPolicyHandoff `
         -SelectedProfileId $SelectedProfileId `
-        -ImageInventory $sync['Win11ISOImageInventory']
+        -ImageInventory $sync['Win11ISOImageInventory'] `
+        -OfflineSession $sync['Win11ISOOfflineSession']
     $sync['Win11ISOPolicyHandoff'] = $handoff
 
     $wasUpdatingExclusiveChoices = $sync['Win11ISOUpdatingExclusiveChoices'] -eq $true
@@ -377,7 +424,8 @@ function Update-WinUtilComponentPolicyUI {
     } finally {
         $sync['Win11ISOUpdatingExclusiveChoices'] = $wasUpdatingExclusiveChoices
     }
-    if ($sync['Win11ISOImageInventory']) {
+    $sessionMatch = Test-WinUtilComponentPolicySession -ImageInventory $sync['Win11ISOImageInventory'] -OfflineSession $sync['Win11ISOOfflineSession']
+    if ($sessionMatch.IsValid) {
         Resolve-WinUtilComponentPolicyHandoff | Out-Null
     } else {
         $sync['Win11ISOResolvedPlan'] = $null
@@ -387,6 +435,8 @@ function Update-WinUtilComponentPolicyUI {
 }
 
 function Resolve-WinUtilComponentPolicyHandoff {
+    $sessionMatch = Test-WinUtilComponentPolicySession -ImageInventory $sync['Win11ISOImageInventory'] -OfflineSession $sync['Win11ISOOfflineSession']
+    if (-not $sessionMatch.IsValid) { throw $sessionMatch.Reason }
     $profileId = [string]$sync['Win11ISOSelectedProfileId']
     $actionOverrides = $sync['Win11ISOComponentActionOverrides']
     if ($null -eq $actionOverrides) { $actionOverrides = @{} }
@@ -411,6 +461,7 @@ function Resolve-WinUtilComponentPolicyHandoff {
     Set-WinUtilAdvancedPackageSelectorUI `
         -ImageInventory $sync['Win11ISOImageInventory'] `
         -ResolvedPlan $result.ResolvedPlan `
+        -RecommendationPlan $result.BaseResolvedPlan `
         -Safety $result.Safety `
         -ActionBundle $result.ActionBundle `
         -RegistryActions $registryActions
@@ -421,6 +472,7 @@ function Set-WinUtilAdvancedPackageSelectorUI {
     param (
         [Parameter(Mandatory)][psobject]$ImageInventory,
         [psobject]$ResolvedPlan,
+        [psobject]$RecommendationPlan,
         [psobject]$Safety,
         [psobject]$ActionBundle,
         [Parameter()][AllowEmptyCollection()][object[]]$RegistryActions
@@ -434,6 +486,7 @@ function Set-WinUtilAdvancedPackageSelectorUI {
     $rows = @(New-WinUtilAdvancedPackageSelectorModel `
         -ImageInventory $ImageInventory `
         -ResolvedPlan $ResolvedPlan `
+        -RecommendationPlan $RecommendationPlan `
         -ManualOverride @($sync['Win11ISOManualOverrides']) `
         -ExpertMode:$expertMode)
     $sync['Win11ISOAdvancedPackageRows'] = $rows
@@ -443,15 +496,30 @@ function Set-WinUtilAdvancedPackageSelectorUI {
         -ResolvedPlan $ResolvedPlan `
         -Safety $Safety `
         -ActionBundle $ActionBundle `
+        -OfflineSession $sync['Win11ISOOfflineSession'] `
         -RegistryActions $RegistryActions
     $sync['Win11ISOPolicyHandoff'] = $handoff
 
-    Invoke-WPFUIThread {
-        $sync.WPFWin11ISOAdvancedPackageItems.ItemsSource = $rows
-        $sync.WPFWin11ISOExpertWarning.Visibility = if ($expertMode) { 'Visible' } else { 'Collapsed' }
-        $sync.WPFWin11ISOPolicyHandoffStatus.Text = $handoff.Status
-        $sync.WPFWin11ISOPolicyHandoffStatus.Foreground = if ($handoff.IsReady) { 'Green' } else { 'OrangeRed' }
-        $sync.WPFWin11ISOModifyButton.IsEnabled = $handoff.IsReady
+    $wasUpdatingAdvancedSelector = $sync['Win11ISOUpdatingAdvancedSelector'] -eq $true
+    $sync['Win11ISOUpdatingAdvancedSelector'] = $true
+    try {
+        Invoke-WPFUIThread {
+            $sync.WPFWin11ISOAdvancedPackageItems.ItemsSource = $rows
+            if ($expertMode) {
+                $sync.WPFWin11ISOExpertWarning.Text = 'Expert mode can override protected recommendations. Review dependencies and risk before selecting a protected component.'
+                $sync.WPFWin11ISOExpertWarning.Visibility = 'Visible'
+            } elseif ($handoff.SafetyAllowed) {
+                $sync.WPFWin11ISOExpertWarning.Visibility = 'Collapsed'
+            } else {
+                $sync.WPFWin11ISOExpertWarning.Text = 'Blocked by component safety policy. Re-enable Expert mode to review or clear protected overrides.'
+                $sync.WPFWin11ISOExpertWarning.Visibility = 'Visible'
+            }
+            $sync.WPFWin11ISOPolicyHandoffStatus.Text = $handoff.Status
+            $sync.WPFWin11ISOPolicyHandoffStatus.Foreground = if ($handoff.IsReady) { 'Green' } else { 'OrangeRed' }
+            $sync.WPFWin11ISOModifyButton.IsEnabled = $handoff.IsReady
+        }
+    } finally {
+        $sync['Win11ISOUpdatingAdvancedSelector'] = $wasUpdatingAdvancedSelector
     }
 }
 

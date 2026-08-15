@@ -19,6 +19,13 @@ Describe 'Win11 Creator component policy presentation' {
         @($script:leanModel.Profiles.Id) | Should -Be @('default-winutil', 'lean-daw', 'custom')
     }
 
+    It 'includes newly implemented profile data without adding a UI placeholder' {
+        $futureProfile = [pscustomobject]@{ id = 'developer'; name = 'Developer'; actions = [pscustomobject]@{} }
+        $model = New-WinUtilComponentPolicyPresentation -Catalog $script:catalog -Profiles (@($script:profiles) + @($futureProfile))
+
+        @($model.Profiles.Id) | Should -Be @('default-winutil', 'lean-daw', 'developer', 'custom')
+    }
+
     It 'summarizes the selected profile from policy actions and risks' {
         $leanProfile = $script:profiles | Where-Object id -eq 'lean-daw'
         $expectedRemove = @($leanProfile.actions.PSObject.Properties | Where-Object Value -eq 'remove').Count
@@ -138,18 +145,36 @@ Describe 'Win11 Creator advanced package selector safeguards' {
         $rejectUnknown.Override | Should -BeNullOrEmpty
     }
 
+    It 'keeps baseline recommendation separate from an effective manual override' {
+        $effectivePlan = $script:plan | ConvertTo-Json -Depth 10 | ConvertFrom-Json
+        ($effectivePlan.Decisions | Where-Object Identity -eq 'Microsoft.WindowsFeedbackHub').Action = 'Keep'
+        $override = [pscustomobject]@{ Kind = 'AppX'; Identity = 'Microsoft.WindowsFeedbackHub'; Action = 'Keep' }
+        $row = @(New-WinUtilAdvancedPackageSelectorModel `
+            -ImageInventory $script:inventory `
+            -ResolvedPlan $effectivePlan `
+            -RecommendationPlan $script:plan `
+            -ManualOverride @($override)) | Where-Object Identity -eq 'Microsoft.WindowsFeedbackHub'
+
+        $row.Recommendation | Should -Be 'Remove'
+        $row.InitialSelected | Should -BeTrue
+        $row.IsSelected | Should -BeFalse
+        (Set-WinUtilAdvancedPackageOverride -Row $row -Selected $true).Override | Should -BeNullOrEmpty
+    }
+
     It 'keeps the servicing handoff staged until inventory, plan, and registry actions are supplied' {
         $preview = New-WinUtilComponentPolicyHandoff -SelectedProfileId 'lean-daw'
         $missingRegistry = New-WinUtilComponentPolicyHandoff `
             -SelectedProfileId 'lean-daw' `
             -ImageInventory $script:inventory `
-            -ResolvedPlan $script:plan
+            -ResolvedPlan $script:plan `
+            -OfflineSession ([pscustomobject]@{ State = 'Mounted'; InstallImagePath = 'install.wim'; ImageIndex = 6 })
         $ready = New-WinUtilComponentPolicyHandoff `
             -SelectedProfileId 'lean-daw' `
             -ImageInventory $script:inventory `
             -ResolvedPlan $script:plan `
             -Safety ([pscustomobject]@{ IsAllowed = $true }) `
             -ActionBundle ([pscustomobject]@{ IsReady = $true }) `
+            -OfflineSession ([pscustomobject]@{ State = 'Mounted'; InstallImagePath = 'install.wim'; ImageIndex = 6 }) `
             -RegistryActions @()
         $unstagedSetup = New-WinUtilComponentPolicyHandoff `
             -SelectedProfileId 'lean-daw' `
@@ -157,6 +182,7 @@ Describe 'Win11 Creator advanced package selector safeguards' {
             -ResolvedPlan $script:plan `
             -Safety ([pscustomobject]@{ IsAllowed = $true }) `
             -ActionBundle ([pscustomobject]@{ IsReady = $false }) `
+            -OfflineSession ([pscustomobject]@{ State = 'Mounted'; InstallImagePath = 'install.wim'; ImageIndex = 6 }) `
             -RegistryActions @()
 
         $preview.IsReady | Should -BeFalse
