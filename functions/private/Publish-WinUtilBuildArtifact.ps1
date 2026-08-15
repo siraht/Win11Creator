@@ -45,6 +45,7 @@ function Publish-WinUtilBuildArtifact {
         [scriptblock]$GetHash = { param($path) (Get-FileHash -LiteralPath $path -Algorithm SHA256 -ErrorAction Stop).Hash }
     )
 
+    $null = $GetHash
     $outputItem = Get-Item -LiteralPath $OutputPath -ErrorAction Stop
     if (-not (Test-Path -LiteralPath $ManifestDirectory -PathType Container)) {
         throw "Transaction manifest directory was not found: $ManifestDirectory"
