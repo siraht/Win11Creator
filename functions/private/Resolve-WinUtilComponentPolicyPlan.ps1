@@ -198,8 +198,12 @@ function Resolve-WinUtilComponentPolicyPlan {
         SchemaVersion = '1.0'
         ProfileId = [string]$ComponentProfile.id
         IsAllowed = $safety.IsAllowed
-        IsReady = $safety.IsAllowed -and -not $requiresSetupStaging
+        IsReady = $safety.IsAllowed
         RequiresSetupStaging = $requiresSetupStaging
+        Consumers = [pscustomobject]@{
+            RegistryActions = 'offline-servicing-transaction'
+            SetupActions = 'iso-policy-setup-staging'
+        }
         Safety = $safety
         ResolvedPlan = $resolvedPlan
         RegistryActions = $deduplicatedRegistryActions

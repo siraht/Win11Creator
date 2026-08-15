@@ -32,8 +32,10 @@ Describe 'Typed component action bundle' {
         $bundle.SchemaVersion | Should -Be '1.0'
         $bundle.Safety | Should -Be $result.Safety
         $bundle.IsAllowed | Should -BeTrue
-        $bundle.IsReady | Should -BeFalse
+        $bundle.IsReady | Should -BeTrue
         $bundle.RequiresSetupStaging | Should -BeTrue
+        $bundle.Consumers.RegistryActions | Should -Be 'offline-servicing-transaction'
+        $bundle.Consumers.SetupActions | Should -Be 'iso-policy-setup-staging'
         $bundle.RegistryActions.Name | Should -Contain 'DisableSearchBoxSuggestions'
         $bundle.RegistryActions.Name | Should -Contain 'EnableLUA'
         $bundle.RegistryActions | Where-Object {
