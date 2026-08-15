@@ -127,14 +127,24 @@ Describe 'Offline servicing transaction boundary' {
         Should -Invoke Remove-WindowsPackage -Times 0 -Exactly
     }
 
-    It 'persists before, after, and diff manifests before committing' {
+    It 'persists the versioned plan, dry run, before, after, and diff contracts before committing' {
         $plan = [pscustomobject]@{ SchemaVersion = '1.0'; Decisions = @() }
         Invoke-WinUtilOfflineServicingTransaction -InstallImagePath $script:wimPath -ImageIndex 6 -ResolvedPlan $plan -MountPath $script:mountPath -ManifestDirectory $script:manifestPath | Out-Null
 
-        foreach ($name in 'ImageInventory.before.json', 'ImageInventory.after.json', 'ImageInventory.diff.json') {
-            Test-Path (Join-Path $script:manifestPath $name) | Should -BeTrue
-            { Get-Content (Join-Path $script:manifestPath $name) -Raw | ConvertFrom-Json } | Should -Not -Throw
+        $expectedTypes = [ordered]@{
+            'ResolvedPlan.json' = 'ResolvedPlan'
+            'ImageInventory.before.json' = 'ImageInventoryBefore'
+            'ImageInventory.after.json' = 'ImageInventoryAfter'
+            'ImageInventory.diff.json' = 'ImageInventoryDiff'
         }
+        foreach ($entry in $expectedTypes.GetEnumerator()) {
+            $name = $entry.Key
+            Test-Path (Join-Path $script:manifestPath $name) | Should -BeTrue
+            $manifest = Get-Content (Join-Path $script:manifestPath $name) -Raw | ConvertFrom-Json
+            $manifest.SchemaVersion | Should -Be '1.0'
+            $manifest.ManifestType | Should -Be $entry.Value
+        }
+        (Get-Item (Join-Path $script:manifestPath 'ResolvedPlan.txt')).Length | Should -BeGreaterThan 0
         (Get-Content (Join-Path $script:manifestPath 'ImageInventory.diff.json') -Raw | ConvertFrom-Json).Changes.Count | Should -Be 4
     }
 

@@ -113,7 +113,18 @@ function Invoke-WinUtilOfflineServicingTransaction {
     }
 
     function Write-WinUtilOfflineJson {
-        param ([Parameter(Mandatory)]$InputObject, [Parameter(Mandatory)][string]$Path)
+        param (
+            [Parameter(Mandatory)]$InputObject,
+            [Parameter(Mandatory)][string]$Path,
+            [Parameter(Mandatory)][string]$ManifestType,
+            [Parameter(Mandatory)][string]$CollectionProperty
+        )
+
+        if ([string]$InputObject.SchemaVersion -ne '1.0' -or [string]$InputObject.ManifestType -ne $ManifestType -or
+            $null -eq $InputObject.Source -or $null -eq $InputObject.Source.ImagePath -or [int]$InputObject.Source.ImageIndex -lt 1 -or
+            $null -eq $InputObject.PSObject.Properties[$CollectionProperty]) {
+            throw "$ManifestType manifest does not satisfy the v1 contract."
+        }
 
         $json = $InputObject | ConvertTo-Json -Depth 12
         [System.IO.File]::WriteAllText($Path, $json, [System.Text.UTF8Encoding]::new($false))
@@ -139,7 +150,7 @@ function Invoke-WinUtilOfflineServicingTransaction {
                 $changes += [pscustomobject][ordered]@{ Change = 'Added'; Kind = $afterMap[$key].Kind; Identity = $afterMap[$key].Identity; BeforeState = $null; AfterState = $afterMap[$key].State }
             }
         }
-        [pscustomobject][ordered]@{ SchemaVersion = '1.0'; Source = $Before.Source; Changes = @($changes) }
+        [pscustomobject][ordered]@{ SchemaVersion = '1.0'; ManifestType = 'ImageInventoryDiff'; Source = $Before.Source; Changes = @($changes) }
     }
 
     function Invoke-WinUtilOfflineRegistryActionBatch {
@@ -229,7 +240,30 @@ function Invoke-WinUtilOfflineServicingTransaction {
             $mounted = $true
             $before = $startedSession.Inventory
         }
-        Write-WinUtilOfflineJson -InputObject $before -Path (Join-Path $pendingManifestDirectory 'ImageInventory.before.json')
+        $beforeManifest = [pscustomobject][ordered]@{
+            SchemaVersion = '1.0'; ManifestType = 'ImageInventoryBefore'; Source = $before.Source; Items = @($before.Items)
+        }
+        $resolvedPlanSource = if ($ResolvedPlan.Source) { $ResolvedPlan.Source } else { $before.Source }
+        $resolvedPlanManifest = [pscustomobject][ordered]@{
+            SchemaVersion = '1.0'; ManifestType = 'ResolvedPlan'; Source = $resolvedPlanSource; Decisions = @($ResolvedPlan.Decisions)
+        }
+        if ($ResolvedPlan.PSObject.Properties['IsAllowed']) {
+            $resolvedPlanManifest | Add-Member -NotePropertyName IsAllowed -NotePropertyValue ([bool]$ResolvedPlan.IsAllowed)
+        }
+        if ($ResolvedPlan.PSObject.Properties['Safety']) {
+            $resolvedPlanManifest | Add-Member -NotePropertyName Safety -NotePropertyValue $ResolvedPlan.Safety
+        }
+        Write-WinUtilOfflineJson -InputObject $beforeManifest -Path (Join-Path $pendingManifestDirectory 'ImageInventory.before.json') -ManifestType 'ImageInventoryBefore' -CollectionProperty 'Items'
+        Write-WinUtilOfflineJson -InputObject $resolvedPlanManifest -Path (Join-Path $pendingManifestDirectory 'ResolvedPlan.json') -ManifestType 'ResolvedPlan' -CollectionProperty 'Decisions'
+        $dryRunLines = @("Image: $($resolvedPlanSource.ImagePath) [index $($resolvedPlanSource.ImageIndex)] $($resolvedPlanSource.ImageName)".TrimEnd())
+        foreach ($decision in @($ResolvedPlan.Decisions)) {
+            $dryRunLines += ('{0,-9} {1,-10} {2} - {3}' -f ([string]$decision.Action).ToUpperInvariant(), $decision.Kind, $decision.Identity, $decision.Reason)
+        }
+        [System.IO.File]::WriteAllLines(
+            (Join-Path $pendingManifestDirectory 'ResolvedPlan.txt'),
+            $dryRunLines,
+            [System.Text.UTF8Encoding]::new($false)
+        )
 
         foreach ($decision in @($ResolvedPlan.Decisions)) {
             if ([string]$decision.Action -in @('Keep', 'Protected', 'Manual')) { continue }
@@ -252,15 +286,18 @@ function Invoke-WinUtilOfflineServicingTransaction {
 
         $after = Get-WinUtilOfflineImageInventory -MountedImagePath $MountPath -SourceImagePath $InstallImagePath -ImageIndex $ImageIndex -ImageName $ImageName -SystemApp $SystemAppDiscovery
         $diff = Get-WinUtilOfflineInventoryDiff -Before $before -After $after
-        Write-WinUtilOfflineJson -InputObject $after -Path (Join-Path $pendingManifestDirectory 'ImageInventory.after.json')
-        Write-WinUtilOfflineJson -InputObject $diff -Path (Join-Path $pendingManifestDirectory 'ImageInventory.diff.json')
+        $afterManifest = [pscustomobject][ordered]@{
+            SchemaVersion = '1.0'; ManifestType = 'ImageInventoryAfter'; Source = $after.Source; Items = @($after.Items)
+        }
+        Write-WinUtilOfflineJson -InputObject $afterManifest -Path (Join-Path $pendingManifestDirectory 'ImageInventory.after.json') -ManifestType 'ImageInventoryAfter' -CollectionProperty 'Items'
+        Write-WinUtilOfflineJson -InputObject $diff -Path (Join-Path $pendingManifestDirectory 'ImageInventory.diff.json') -ManifestType 'ImageInventoryDiff' -CollectionProperty 'Changes'
 
         & $Log 'Committing the offline servicing transaction once.'
         Dismount-WindowsImage -Path $MountPath -Save -ErrorAction Stop | Out-Null
         $mounted = $false
         $committed = $true
         if ($Session) { $Session.State = 'Committed' }
-        foreach ($manifestName in 'ImageInventory.before.json', 'ImageInventory.after.json', 'ImageInventory.diff.json') {
+        foreach ($manifestName in 'ResolvedPlan.json', 'ResolvedPlan.txt', 'ImageInventory.before.json', 'ImageInventory.after.json', 'ImageInventory.diff.json') {
             Move-Item -LiteralPath (Join-Path $pendingManifestDirectory $manifestName) -Destination (Join-Path $ManifestDirectory $manifestName) -Force
         }
         return [pscustomobject][ordered]@{ Before = $before; After = $after; Diff = $diff; ManifestDirectory = $ManifestDirectory }

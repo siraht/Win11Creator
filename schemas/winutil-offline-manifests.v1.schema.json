@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:winutil:schema:offline-manifests:1",
+  "title": "WinUtil offline servicing manifests v1",
+  "$defs": {
+    "source": {
+      "type": "object",
+      "required": ["ImagePath", "ImageIndex"],
+      "properties": {
+        "ImagePath": { "type": "string", "minLength": 1 },
+        "ImageIndex": { "type": "integer", "minimum": 1 },
+        "ImageName": { "type": "string" },
+        "MountedImagePath": { "type": "string" }
+      }
+    },
+    "resolvedPlan": {
+      "type": "object",
+      "required": ["SchemaVersion", "ManifestType", "Source", "Decisions"],
+      "properties": {
+        "SchemaVersion": { "const": "1.0" },
+        "ManifestType": { "const": "ResolvedPlan" },
+        "Source": { "$ref": "#/$defs/source" },
+        "Decisions": { "type": "array" },
+        "IsAllowed": { "type": "boolean" },
+        "Safety": { "type": "object" }
+      }
+    },
+    "inventoryBefore": {
+      "type": "object",
+      "required": ["SchemaVersion", "ManifestType", "Source", "Items"],
+      "properties": {
+        "SchemaVersion": { "const": "1.0" },
+        "ManifestType": { "const": "ImageInventoryBefore" },
+        "Source": { "$ref": "#/$defs/source" },
+        "Items": { "type": "array" }
+      }
+    },
+    "inventoryAfter": {
+      "type": "object",
+      "required": ["SchemaVersion", "ManifestType", "Source", "Items"],
+      "properties": {
+        "SchemaVersion": { "const": "1.0" },
+        "ManifestType": { "const": "ImageInventoryAfter" },
+        "Source": { "$ref": "#/$defs/source" },
+        "Items": { "type": "array" }
+      }
+    },
+    "inventoryDiff": {
+      "type": "object",
+      "required": ["SchemaVersion", "ManifestType", "Source", "Changes"],
+      "properties": {
+        "SchemaVersion": { "const": "1.0" },
+        "ManifestType": { "const": "ImageInventoryDiff" },
+        "Source": { "$ref": "#/$defs/source" },
+        "Changes": { "type": "array" }
+      }
+    }
+  }
+}
