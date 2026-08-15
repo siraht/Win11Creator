@@ -231,6 +231,33 @@ Describe 'Installed acceptance harness' {
         $scriptText | Should -Not -Match '\{F1E7E5A1-5E70-4A20-BA76-02E5215AC9F5\}'
     }
 
+    It 'InstalledAcceptance_WebViewProviderAcceptsRuntimeExecutableWithoutRegistration' {
+        Mock Get-ChildItem {
+            if (($Path -join ';') -match 'msedgewebview2\.exe') { [pscustomobject]@{ FullName = 'C:\Program Files (x86)\Microsoft\EdgeWebView\Application\142.0.0.0\msedgewebview2.exe' } }
+        }
+        Mock Get-ItemProperty { throw 'No registration should be read when no client key exists.' }
+        $provider = Get-WinUtilInstalledProbeProvider
+        $probe = & $provider.Registration 'WebView2'
+
+        $probe.Present | Should -BeTrue
+        $probe.Evidence | Should -Match 'msedgewebview2\.exe'
+    }
+
+    It 'InstalledAcceptance_MissingOneSettingsRefreshCacheTask_PlantedNegative' {
+        $provider = New-AcceptanceProbeProvider -Mode LeanDaw
+        $baseTask = $provider.Task
+        $provider.Task = {
+            param ($TaskPath)
+            if ($TaskPath -eq '\Microsoft\Windows\Flighting\OneSettings\RefreshCache') {
+                [pscustomobject]@{ Present = $false; Enabled = $false; Evidence = 'RefreshCache missing' }
+            } else { & $baseTask $TaskPath }
+        }.GetNewClosure()
+        $result = Invoke-WinUtilInstalledAcceptance -ExpectedState LeanDaw -Depth Quick -OutputPath (Join-Path $TestDrive 'missing-refreshcache.json') -ProbeProvider $provider
+
+        $result.ExitCode | Should -Be 1
+        ($result.Document.Results | Where-Object Id -eq 'protected.task.onesettings-refreshcache').Status | Should -Be 'Fail'
+    }
+
     It 'InstalledAcceptance_RemovedProtectedFeaturePayload_PlantedNegative' {
         $provider = New-AcceptanceProbeProvider -Mode LeanDaw
         $provider.Feature = { param ($Name) [pscustomobject]@{ Present = $Name -ne 'ServicesForNFS-ClientOnly'; State = 'Disabled with Payload Removed'; Evidence = "feature=$Name payload removed" } }
