@@ -11,12 +11,25 @@ BeforeAll {
             [bool]$CopyEvidence = $true,
             [int]$ClockStepMinutes = 0,
             [bool]$CreateFailure = $false,
-            [bool]$TargetFailure = $false
+            [bool]$TargetFailure = $false,
+            [bool]$AnswerFailure = $false
         )
-        $state = [pscustomobject]@{ Removed = $false; Started = $false; Clock = [datetime]'2026-01-01T00:00:00Z' }
+        $state = [pscustomobject]@{ Removed = $false; AnswerRemoved = $false; Started = $false; Clock = [datetime]'2026-01-01T00:00:00Z'; AnswerUser = $null }
         $provider = @{
             AssertHost = { param ($SwitchName) if (-not $SwitchName) { throw 'missing switch' } }
             AssertTargets = { param ($VMName, $VhdPath) if ($TargetFailure) { throw 'target already exists' } }.GetNewClosure()
+            GenerateAnswerMedia = {
+                param ($GeneratorPath, $OutputPath, $Edition, $Credential)
+                if ($AnswerFailure) { throw 'planted answer generation failure' }
+                $state.AnswerUser = $Credential.UserName
+                Set-Content -LiteralPath $OutputPath -Value 'ephemeral answer fixture'
+                [pscustomobject]@{ Path = $OutputPath; Edition = $Edition; Sha256 = 'A' * 64 }
+            }.GetNewClosure()
+            RemoveAnswerMedia = {
+                param ($VMName, $Path)
+                Remove-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+                $state.AnswerRemoved = $true
+            }.GetNewClosure()
             CreateVM = { param ($VMName) if (-not $VMName) { throw 'missing VM' }; if ($CreateFailure) { throw 'planted creation failure' } }.GetNewClosure()
             StartVM = { param ($VMName) $state.Started = $true }.GetNewClosure()
             GetVMState = { param ($VMName) $VMState }.GetNewClosure()
@@ -44,11 +57,9 @@ BeforeAll {
     function Invoke-TestHyperVAcceptance {
         param ($ProviderState, [string]$ExpectedState = 'StockControl', [int]$TimeoutMinutes = 5, [string]$OutputName = 'result')
         $isoPath = Join-Path $TestDrive "$OutputName.iso"
-        $answerPath = Join-Path $TestDrive "$OutputName-answer.iso"
         Set-Content -LiteralPath $isoPath -Value 'generated iso fixture'
-        Set-Content -LiteralPath $answerPath -Value 'unattend iso fixture'
         $credential = [pscredential]::new('WinUtilTest', (ConvertTo-SecureString 'fixture-only' -AsPlainText -Force))
-        Invoke-WinUtilHyperVAcceptance -IsoPath $isoPath -UnattendIsoPath $answerPath -ExpectedState $ExpectedState -Depth Quick `
+        Invoke-WinUtilHyperVAcceptance -IsoPath $isoPath -Edition 'Windows 11 Pro' -ExpectedState $ExpectedState -Depth Quick `
             -VMName "WinUtil-$OutputName" -SwitchName 'TestSwitch' -VhdPath (Join-Path $TestDrive "$OutputName.vhdx") `
             -OutputDirectory (Join-Path $TestDrive $OutputName) -GuestCredential $credential -InstallTimeoutMinutes $TimeoutMinutes `
             -PostLoginSmokeCommand 'exit 0' -VMProvider $ProviderState.Provider
@@ -66,9 +77,12 @@ Describe 'Hyper-V installed acceptance orchestration' {
         $result.IsAccepted | Should -BeTrue
         $fake.State.Started | Should -BeTrue
         $fake.State.Removed | Should -BeTrue
+        $fake.State.AnswerRemoved | Should -BeTrue
+        $fake.State.AnswerUser | Should -Be 'WinUtilTest'
         Test-Path -LiteralPath (Join-Path $result.OutputDirectory 'installed-acceptance.json') | Should -BeTrue
         Test-Path -LiteralPath (Join-Path $result.OutputDirectory 'installed-acceptance.log') | Should -BeTrue
         Get-Content -LiteralPath $result.LogPath -Raw | Should -Match 'Guest installed acceptance passed'
+        Get-Content -LiteralPath $result.LogPath -Raw | Should -Not -Match 'fixture-only'
     }
 
     It 'HyperVAcceptance_BootFailure_PlantedNegative' {
@@ -87,6 +101,16 @@ Describe 'Hyper-V installed acceptance orchestration' {
         $result.ExitCode | Should -Be 1
         $result.Failure | Should -Match 'planted creation failure'
         $fake.State.Removed | Should -BeTrue
+    }
+
+    It 'HyperVAcceptance_AnswerGenerationFailure_PlantedNegative' {
+        $fake = New-HyperVAcceptanceProvider -AnswerFailure $true
+        $result = Invoke-TestHyperVAcceptance -ProviderState $fake -OutputName 'answer-failure'
+
+        $result.ExitCode | Should -Be 1
+        $result.Failure | Should -Match 'planted answer generation failure'
+        $fake.State.Started | Should -BeFalse
+        $fake.State.Removed | Should -BeFalse
     }
 
     It 'HyperVAcceptance_PreexistingTargetIsNeverRemoved_PlantedNegative' {
@@ -130,12 +154,10 @@ Describe 'Hyper-V installed acceptance orchestration' {
         New-Item -Path $output -ItemType Directory | Out-Null
         Set-Content -LiteralPath (Join-Path $output 'old.json') -Value '{}'
         $iso = Join-Path $TestDrive 'stale.iso'
-        $answer = Join-Path $TestDrive 'stale-answer.iso'
         Set-Content -LiteralPath $iso -Value fixture
-        Set-Content -LiteralPath $answer -Value fixture
         $credential = [pscredential]::new('test', (ConvertTo-SecureString 'test' -AsPlainText -Force))
 
-        { Invoke-WinUtilHyperVAcceptance -IsoPath $iso -UnattendIsoPath $answer -ExpectedState StockControl -VMName Test -SwitchName Test -VhdPath (Join-Path $TestDrive 'stale.vhdx') -OutputDirectory $output -GuestCredential $credential -PostLoginSmokeCommand 'exit 0' -VMProvider $fake.Provider } |
+        { Invoke-WinUtilHyperVAcceptance -IsoPath $iso -Edition 'Windows 11 Pro' -ExpectedState StockControl -VMName Test -SwitchName Test -VhdPath (Join-Path $TestDrive 'stale.vhdx') -OutputDirectory $output -GuestCredential $credential -PostLoginSmokeCommand 'exit 0' -VMProvider $fake.Provider } |
             Should -Throw '*must be empty to prevent stale evidence*'
     }
 
@@ -154,6 +176,13 @@ Describe 'Release VM acceptance wiring' {
         $workflow | Should -Match '-ExpectedState LeanDaw'
         $workflow | Should -Match 'WINUTIL_STOCK_CONTROL_ISO_PATH'
         $workflow | Should -Match 'WINUTIL_LEAN_DAW_ISO_PATH'
+        $workflow | Should -Not -Match 'WINUTIL_UNATTEND_ISO_PATH'
         $workflow | Should -Not -Match '(?m)^\s*\./tools/Invoke-WinUtilInstalledAcceptance\.ps1'
+    }
+
+    It 'HyperVAcceptance_AttachesAnswerMediaBeforeBootMediaForAnswerDiscovery' {
+        $source = Get-Content -LiteralPath (Join-Path $script:repoRoot 'tools/Invoke-WinUtilHyperVAcceptance.ps1') -Raw
+        $source.IndexOf('Add-VMDvdDrive -VMName $VMName -Path $UnattendIsoPath') | Should -BeLessThan $source.IndexOf('$installDrive = Add-VMDvdDrive -VMName $VMName -Path $IsoPath')
+        $source | Should -Match 'Set-VMFirmware -VMName \$VMName -FirstBootDevice \$installDrive'
     }
 }

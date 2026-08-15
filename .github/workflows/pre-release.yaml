@@ -16,6 +16,16 @@ on:
         options:
           - Release
           - Quick
+      stock-edition:
+        description: Exact /IMAGE/NAME in the StockControl ISO
+        required: true
+        type: string
+        default: Windows 11 Pro
+      lean-edition:
+        description: Exact /IMAGE/NAME in the Lean DAW ISO
+        required: true
+        type: string
+        default: Windows 11 Pro
 
 jobs:
   build-runspace:
@@ -105,7 +115,7 @@ jobs:
     env:
       WINUTIL_STOCK_CONTROL_ISO_PATH: ${{ vars.WINUTIL_STOCK_CONTROL_ISO_PATH }}
       WINUTIL_LEAN_DAW_ISO_PATH: ${{ vars.WINUTIL_LEAN_DAW_ISO_PATH }}
-      WINUTIL_UNATTEND_ISO_PATH: ${{ vars.WINUTIL_UNATTEND_ISO_PATH }}
+      WINUTIL_OSCDIMG_PATH: ${{ vars.WINUTIL_OSCDIMG_PATH }}
       WINUTIL_HYPERV_SWITCH: ${{ vars.WINUTIL_HYPERV_SWITCH }}
       WINUTIL_VM_GUEST_USERNAME: ${{ vars.WINUTIL_VM_GUEST_USERNAME }}
       WINUTIL_VM_GUEST_PASSWORD: ${{ secrets.WINUTIL_VM_GUEST_PASSWORD }}
@@ -124,7 +134,7 @@ jobs:
           foreach ($requiredValue in @{
             WINUTIL_STOCK_CONTROL_ISO_PATH = $env:WINUTIL_STOCK_CONTROL_ISO_PATH
             WINUTIL_LEAN_DAW_ISO_PATH = $env:WINUTIL_LEAN_DAW_ISO_PATH
-            WINUTIL_UNATTEND_ISO_PATH = $env:WINUTIL_UNATTEND_ISO_PATH
+            WINUTIL_OSCDIMG_PATH = $env:WINUTIL_OSCDIMG_PATH
             WINUTIL_HYPERV_SWITCH = $env:WINUTIL_HYPERV_SWITCH
             WINUTIL_VM_GUEST_USERNAME = $env:WINUTIL_VM_GUEST_USERNAME
             WINUTIL_VM_GUEST_PASSWORD = $env:WINUTIL_VM_GUEST_PASSWORD
@@ -140,7 +150,8 @@ jobs:
 
           ./tools/Invoke-WinUtilHyperVAcceptance.ps1 `
             -IsoPath $env:WINUTIL_STOCK_CONTROL_ISO_PATH `
-            -UnattendIsoPath $env:WINUTIL_UNATTEND_ISO_PATH `
+            -Edition '${{ inputs['stock-edition'] }}' `
+            -OscdimgPath $env:WINUTIL_OSCDIMG_PATH `
             -ExpectedState StockControl `
             -Depth Quick `
             -VMName 'WinUtil-Stock-${{ github.run_id }}-${{ github.run_attempt }}' `
@@ -152,7 +163,8 @@ jobs:
 
           ./tools/Invoke-WinUtilHyperVAcceptance.ps1 `
             -IsoPath $env:WINUTIL_LEAN_DAW_ISO_PATH `
-            -UnattendIsoPath $env:WINUTIL_UNATTEND_ISO_PATH `
+            -Edition '${{ inputs['lean-edition'] }}' `
+            -OscdimgPath $env:WINUTIL_OSCDIMG_PATH `
             -ExpectedState LeanDaw `
             -Depth '${{ inputs['validation-depth'] }}' `
             -VMName 'WinUtil-Lean-${{ github.run_id }}-${{ github.run_attempt }}' `

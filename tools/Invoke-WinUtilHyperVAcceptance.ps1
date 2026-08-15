@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param (
     [string]$IsoPath,
-    [string]$UnattendIsoPath,
+    [string]$Edition,
+    [string]$OscdimgPath = 'oscdimg.exe',
     [ValidateSet('StockControl', 'LeanDaw')][string]$ExpectedState,
     [ValidateSet('Quick', 'Release')][string]$Depth = 'Release',
     [string]$VMName,
@@ -39,14 +40,24 @@ function Get-WinUtilHyperVProvider {
             if (Get-VM -Name $VMName -ErrorAction SilentlyContinue) { throw "VM '$VMName' already exists." }
             if (Test-Path -LiteralPath $VhdPath) { throw "VHD path '$VhdPath' already exists." }
         }
+        GenerateAnswerMedia = {
+            param ($GeneratorPath, $OutputPath, $Edition, [pscredential]$GuestCredential, $OscdimgPath)
+            . $GeneratorPath
+            New-WinUtilTestAnswerMedia -OutputPath $OutputPath -Edition $Edition -GuestCredential $GuestCredential -OscdimgPath $OscdimgPath
+        }
+        RemoveAnswerMedia = {
+            param ($VMName, $Path)
+            Get-VMDvdDrive -VMName $VMName -ErrorAction SilentlyContinue | Where-Object Path -eq $Path | Set-VMDvdDrive -Path $null -ErrorAction SilentlyContinue
+            if (Test-Path -LiteralPath $Path -PathType Leaf) { Remove-Item -LiteralPath $Path -Force -ErrorAction Stop }
+        }
         CreateVM = {
             param ($VMName, $SwitchName, $VhdPath, $VhdSizeBytes, $MemoryStartupBytes, $ProcessorCount, $IsoPath, $UnattendIsoPath)
             $vm = New-VM -Name $VMName -Generation 2 -MemoryStartupBytes $MemoryStartupBytes -NewVHDPath $VhdPath -NewVHDSizeBytes $VhdSizeBytes -SwitchName $SwitchName -ErrorAction Stop
             Set-VMProcessor -VMName $VMName -Count $ProcessorCount -ErrorAction Stop
             Set-VM -VMName $VMName -AutomaticStartAction Nothing -AutomaticStopAction ShutDown -CheckpointType Disabled -ErrorAction Stop
             Enable-VMIntegrationService -VMName $VMName -Name 'Guest Service Interface' -ErrorAction Stop
-            $installDrive = Add-VMDvdDrive -VMName $VMName -Path $IsoPath -Passthru -ErrorAction Stop
             Add-VMDvdDrive -VMName $VMName -Path $UnattendIsoPath -ErrorAction Stop | Out-Null
+            $installDrive = Add-VMDvdDrive -VMName $VMName -Path $IsoPath -Passthru -ErrorAction Stop
             Set-VMFirmware -VMName $VMName -FirstBootDevice $installDrive -EnableSecureBoot On -SecureBootTemplate MicrosoftWindows -ErrorAction Stop
             $vm
         }
@@ -55,7 +66,7 @@ function Get-WinUtilHyperVProvider {
         TestGuestReady = {
             param ($VMName, [pscredential]$GuestCredential)
             try {
-                $ready = Invoke-Command -VMName $VMName -Credential $GuestCredential -ScriptBlock { Test-Path -LiteralPath "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" } -ErrorAction Stop
+                $ready = Invoke-Command -VMName $VMName -Credential $GuestCredential -ScriptBlock { Test-Path -LiteralPath 'C:\ProgramData\WinUtilAcceptance\first-logon.ready' } -ErrorAction Stop
                 [bool]$ready
             } catch { $false }
         }
@@ -98,7 +109,8 @@ function Invoke-WinUtilHyperVAcceptance {
     [CmdletBinding()]
     param (
         [Parameter(Mandatory)][string]$IsoPath,
-        [Parameter(Mandatory)][string]$UnattendIsoPath,
+        [Parameter(Mandatory)][ValidatePattern('^[A-Za-z0-9][A-Za-z0-9 .()_-]{0,79}$')][string]$Edition,
+        [string]$OscdimgPath = 'oscdimg.exe',
         [Parameter(Mandatory)][ValidateSet('StockControl', 'LeanDaw')][string]$ExpectedState,
         [ValidateSet('Quick', 'Release')][string]$Depth = 'Release',
         [Parameter(Mandatory)][string]$VMName,
@@ -120,27 +132,32 @@ function Invoke-WinUtilHyperVAcceptance {
     )
 
     if (-not (Test-Path -LiteralPath $IsoPath -PathType Leaf)) { throw "Generated ISO '$IsoPath' does not exist." }
-    if (-not (Test-Path -LiteralPath $UnattendIsoPath -PathType Leaf)) { throw "Unattend ISO '$UnattendIsoPath' does not exist." }
     if (Test-Path -LiteralPath $OutputDirectory) {
         if (@(Get-ChildItem -LiteralPath $OutputDirectory -Force).Count -gt 0) { throw "Output directory '$OutputDirectory' must be empty to prevent stale evidence." }
     } else { New-Item -Path $OutputDirectory -ItemType Directory -Force | Out-Null }
     if (-not $VMProvider) { $VMProvider = Get-WinUtilHyperVProvider }
-    foreach ($boundary in @('AssertHost', 'AssertTargets', 'CreateVM', 'StartVM', 'GetVMState', 'TestGuestReady', 'CopyToGuest', 'InvokeGuestAcceptance', 'CopyFromGuest', 'RemoveVM', 'Now', 'Delay')) {
+    foreach ($boundary in @('AssertHost', 'AssertTargets', 'GenerateAnswerMedia', 'RemoveAnswerMedia', 'CreateVM', 'StartVM', 'GetVMState', 'TestGuestReady', 'CopyToGuest', 'InvokeGuestAcceptance', 'CopyFromGuest', 'RemoveVM', 'Now', 'Delay')) {
         if (-not $VMProvider.ContainsKey($boundary) -or $VMProvider[$boundary] -isnot [scriptblock]) { throw "VMProvider boundary '$boundary' must be a scriptblock." }
     }
 
     $logPath = Join-Path $OutputDirectory 'hyperv-acceptance.log'
     $provisioningAttempted = $false
+    $answerMediaGenerated = $false
     $accepted = $false
     $failure = $null
     try {
         & $VMProvider.AssertHost $SwitchName
         & $VMProvider.AssertTargets $VMName $VhdPath
+        $answerMediaPath = Join-Path ([IO.Path]::GetTempPath()) "$VMName-answer.iso"
+        $generatorPath = Join-Path $PSScriptRoot 'New-WinUtilTestAnswerMedia.ps1'
+        if (-not (Test-Path -LiteralPath $generatorPath -PathType Leaf)) { throw "Test answer-media generator '$generatorPath' is missing." }
+        $answerMedia = & $VMProvider.GenerateAnswerMedia $generatorPath $answerMediaPath $Edition $GuestCredential $OscdimgPath
+        if (-not $answerMedia -or -not (Test-Path -LiteralPath $answerMediaPath -PathType Leaf)) { throw 'Test answer-media generation did not produce an ISO.' }
+        $answerMediaGenerated = $true
         $isoHash = (Get-FileHash -LiteralPath $IsoPath -Algorithm SHA256).Hash
-        $unattendHash = (Get-FileHash -LiteralPath $UnattendIsoPath -Algorithm SHA256).Hash
-        Add-Content -LiteralPath $logPath -Value "[$(& $VMProvider.Now)] Creating VM '$VMName' from '$IsoPath' SHA256=$isoHash; answer ISO SHA256=$unattendHash."
+        Add-Content -LiteralPath $logPath -Value "[$(& $VMProvider.Now)] Creating VM '$VMName' from '$IsoPath' SHA256=$isoHash; ephemeral answer media SHA256=$($answerMedia.Sha256); edition='$Edition'."
         $provisioningAttempted = $true
-        & $VMProvider.CreateVM $VMName $SwitchName $VhdPath $VhdSizeBytes $MemoryStartupBytes $ProcessorCount $IsoPath $UnattendIsoPath | Out-Null
+        & $VMProvider.CreateVM $VMName $SwitchName $VhdPath $VhdSizeBytes $MemoryStartupBytes $ProcessorCount $IsoPath $answerMediaPath | Out-Null
         & $VMProvider.StartVM $VMName
         Add-Content -LiteralPath $logPath -Value "[$(& $VMProvider.Now)] VM started; waiting for clean install and PowerShell Direct."
 
@@ -184,12 +201,20 @@ function Invoke-WinUtilHyperVAcceptance {
                 Add-Content -LiteralPath $logPath -Value "[$(& $VMProvider.Now)] FAILED: $cleanupFailure"
             }
         }
+        if ($answerMediaGenerated) {
+            try { & $VMProvider.RemoveAnswerMedia $VMName $answerMediaPath; Add-Content -LiteralPath $logPath -Value "[$(& $VMProvider.Now)] Removed ephemeral answer media." } catch {
+                $accepted = $false
+                $mediaCleanupFailure = "Answer-media cleanup failed: $($_.Exception.Message)"
+                $failure = if ($failure) { "$failure $mediaCleanupFailure" } else { $mediaCleanupFailure }
+                Add-Content -LiteralPath $logPath -Value "[$(& $VMProvider.Now)] FAILED: $mediaCleanupFailure"
+            }
+        }
     }
     [pscustomobject]@{ IsAccepted = $accepted; ExitCode = $(if ($accepted) { 0 } else { 1 }); Failure = $failure; OutputDirectory = $OutputDirectory; LogPath = $logPath; VMName = $VMName; VMRetained = [bool]$KeepVM }
 }
 
 if ($MyInvocation.InvocationName -ne '.') {
-    $result = Invoke-WinUtilHyperVAcceptance -IsoPath $IsoPath -UnattendIsoPath $UnattendIsoPath -ExpectedState $ExpectedState -Depth $Depth -VMName $VMName -SwitchName $SwitchName -VhdPath $VhdPath -OutputDirectory $OutputDirectory -GuestCredential $GuestCredential -InstallTimeoutMinutes $InstallTimeoutMinutes -MemoryStartupBytes $MemoryStartupBytes -VhdSizeBytes $VhdSizeBytes -ProcessorCount $ProcessorCount -AbletonPath $AbletonPath -Vst3Path $Vst3Path -LatencyMonReportPath $LatencyMonReportPath -SmokeCommand $SmokeCommand -PostLoginSmokeCommand $PostLoginSmokeCommand -VMProvider $VMProvider -KeepVM:$KeepVM
+    $result = Invoke-WinUtilHyperVAcceptance -IsoPath $IsoPath -Edition $Edition -OscdimgPath $OscdimgPath -ExpectedState $ExpectedState -Depth $Depth -VMName $VMName -SwitchName $SwitchName -VhdPath $VhdPath -OutputDirectory $OutputDirectory -GuestCredential $GuestCredential -InstallTimeoutMinutes $InstallTimeoutMinutes -MemoryStartupBytes $MemoryStartupBytes -VhdSizeBytes $VhdSizeBytes -ProcessorCount $ProcessorCount -AbletonPath $AbletonPath -Vst3Path $Vst3Path -LatencyMonReportPath $LatencyMonReportPath -SmokeCommand $SmokeCommand -PostLoginSmokeCommand $PostLoginSmokeCommand -VMProvider $VMProvider -KeepVM:$KeepVM
     if ($PassThru) { $result }
     exit $result.ExitCode
 }
