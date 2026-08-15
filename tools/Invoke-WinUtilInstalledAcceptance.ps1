@@ -116,6 +116,16 @@ function Invoke-WinUtilInstalledAcceptance {
             Add-AcceptanceResult $Id $Area $Required 'Fail' $_.Exception.Message
         }
     }
+    function Test-ServiceAvailability {
+        param ([string]$Id, [string]$Area, [bool]$Required, [string]$Name, [bool]$ExpectedAvailable)
+        try {
+            $probe = & $ProbeProvider.Service $Name
+            $available = $probe.Present -and [string]$probe.StartType -ne 'Disabled'
+            Add-AcceptanceResult $Id $Area $Required $(if ($available -eq $ExpectedAvailable) { 'Pass' } else { 'Fail' }) ([string]$probe.Evidence)
+        } catch {
+            Add-AcceptanceResult $Id $Area $Required 'Fail' $_.Exception.Message
+        }
+    }
 
     Test-Command 'servicing.dism-checkhealth' 'Servicing' $true 'dism.exe' @('/Online', '/Cleanup-Image', '/CheckHealth')
     if ($Depth -eq 'Release') {
@@ -127,7 +137,7 @@ function Invoke-WinUtilInstalledAcceptance {
     }
     Test-Command 'servicing.winre' 'Servicing' ($Depth -eq 'Release') 'reagentc.exe' @('/info')
     foreach ($serviceName in @('wuauserv', 'BITS', 'UsoSvc', 'WaaSMedicSvc')) {
-        Test-Presence "update.service.$($serviceName.ToLowerInvariant())" 'WindowsUpdate' $true 'Service' @($serviceName) $true
+        Test-ServiceAvailability "update.service.$($serviceName.ToLowerInvariant())" 'WindowsUpdate' $true $serviceName $true
     }
     Test-Command 'update.scan' 'WindowsUpdate' $true 'powershell.exe' @('-NoProfile', '-NonInteractive', '-Command', '$session = New-Object -ComObject Microsoft.Update.Session; $search = $session.CreateUpdateSearcher().Search(''IsInstalled=0 and IsHidden=0''); "UpdateScan count=$($search.Updates.Count) result=$($search.ResultCode)"')
 
@@ -153,7 +163,7 @@ function Invoke-WinUtilInstalledAcceptance {
         @{ Id = 'removal.search'; Name = 'WSearch' }, @{ Id = 'removal.defender'; Name = 'WinDefend' },
         @{ Id = 'removal.telemetry'; Name = 'DiagTrack' }
     )) {
-        Test-Presence $entry.Id 'DeclaredState' $true 'Service' @($entry.Name) (-not $lean)
+        Test-ServiceAvailability $entry.Id 'DeclaredState' $true $entry.Name (-not $lean)
     }
     $registryStates = @(
         @{ Id = 'removal.smartscreen'; Path = 'Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\System'; Name = 'EnableSmartScreen'; LeanValue = 0 },
@@ -174,7 +184,7 @@ function Invoke-WinUtilInstalledAcceptance {
         Test-Presence "protected.feature.$($featureName.ToLowerInvariant())" 'Protected' $true 'Feature' @($featureName) $true
     }
     foreach ($serviceName in @('WerSvc', 'PcaSvc', 'SysMain')) {
-        Test-Presence "protected.service.$($serviceName.ToLowerInvariant())" 'Protected' $true 'Service' @($serviceName) $true
+        Test-ServiceAvailability "protected.service.$($serviceName.ToLowerInvariant())" 'Protected' $true $serviceName $true
     }
     Test-Presence 'protected.onesettings' 'Protected' $true 'Appx' @('*OneSettings*') $true
     Test-Presence 'protected.featureconfig' 'Protected' $true 'File' @("$env:SystemRoot\System32\FeatureConfigManager.dll") $true

@@ -26,7 +26,7 @@ BeforeAll {
             Service = {
                 param ($Name)
                 $declaredRemoval = $Name -in @('WSearch', 'WinDefend', 'OneSyncSvc', 'DiagTrack')
-                [pscustomobject]@{ Present = -not ($lean -and $declaredRemoval); Evidence = "service=$Name" }
+                [pscustomobject]@{ Present = -not ($lean -and $declaredRemoval); StartType = 'Manual'; Evidence = "service=$Name start=Manual" }
             }.GetNewClosure()
             Feature = { param ($Name) [pscustomobject]@{ Present = $true; Evidence = "feature=$Name" } }
             File = {
@@ -75,6 +75,18 @@ Describe 'Installed acceptance harness' {
         $result.IsAccepted | Should -BeFalse
         ($result.Document.Results | Where-Object Id -eq 'servicing.dism-checkhealth').Status | Should -Be 'Fail'
         $result.Document.Summary.RequiredFailures | Should -BeGreaterThan 0
+    }
+
+    It 'InstalledAcceptance_DisabledUpdateInfrastructure_PlantedNegative' {
+        $provider = New-AcceptanceProbeProvider
+        $provider.Service = {
+            param ($Name)
+            [pscustomobject]@{ Present = $true; StartType = $(if ($Name -eq 'wuauserv') { 'Disabled' } else { 'Manual' }); Evidence = "service=$Name" }
+        }
+        $result = Invoke-WinUtilInstalledAcceptance -ExpectedState StockControl -Depth Quick -OutputPath (Join-Path $TestDrive 'disabled-update.json') -ProbeProvider $provider
+
+        $result.ExitCode | Should -Be 1
+        ($result.Document.Results | Where-Object Id -eq 'update.service.wuauserv').Status | Should -Be 'Fail'
     }
 
     It 'InstalledAcceptance_ReleaseMissingCommercialEvidenceIsNotRunAndBlocking' {
