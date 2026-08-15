@@ -144,10 +144,7 @@ $sync.WPFWin11ISOProfileComboBox.Add_SelectionChanged({
 
 $refreshAdvancedPackageSelector = {
     if ($sync.Win11ISOImageInventory) {
-        Set-WinUtilAdvancedPackageSelectorUI `
-            -ImageInventory $sync['Win11ISOImageInventory'] `
-            -ResolvedPlan $sync['Win11ISOResolvedPlan'] `
-            -RegistryActions $sync['Win11ISORegistryActions']
+        Resolve-WinUtilComponentPolicyHandoff | Out-Null
     } else {
         $sync.WPFWin11ISOExpertWarning.Visibility = if ($sync.WPFWin11ISOExpertMode.IsChecked) { 'Visible' } else { 'Collapsed' }
     }
@@ -181,14 +178,7 @@ $advancedPackageSelectionHandler = [System.Windows.RoutedEventHandler]{
     if ($result.Override) { $overrideByKey[$key] = $result.Override } else { $overrideByKey.Remove($key) }
     $sync['Win11ISOManualOverrides'] = @($overrideByKey.Values)
 
-    $sync['Win11ISOResolvedPlan'] = $null
-    $sync['Win11ISORegistryActions'] = $null
-    $handoff = New-WinUtilComponentPolicyHandoff `
-        -SelectedProfileId ([string]$sync['Win11ISOSelectedProfileId']) `
-        -ImageInventory $sync['Win11ISOImageInventory']
-    $sync['Win11ISOPolicyHandoff'] = $handoff
-    $sync.WPFWin11ISOPolicyHandoffStatus.Text = $handoff.Status
-    $sync.WPFWin11ISOPolicyHandoffStatus.Foreground = 'OrangeRed'
+    Resolve-WinUtilComponentPolicyHandoff | Out-Null
 }
 $sync.WPFWin11ISOAdvancedPackageItems.AddHandler(
     [System.Windows.Controls.Primitives.ToggleButton]::CheckedEvent,
@@ -248,6 +238,10 @@ Set-WinUtilTaskbaritem -state "None"
 $sync["Form"].title = $sync["Form"].title + " " + $sync.version
 # Set the commands that will run when the form is closed
 $sync["Form"].Add_Closing({
+    if ($sync['Win11ISOOfflineSession']) {
+        Stop-WinUtilOfflineServicingSession -Session $sync['Win11ISOOfflineSession'] -Log { param($message) Write-WinUtilISOLog $message }
+        $sync['Win11ISOOfflineSession'] = $null
+    }
     Close-WinUtilRunspacePool
     [System.GC]::Collect()
 })
@@ -564,6 +558,20 @@ $sync["WPFWin11ISODownloadLink"].Add_Click({
 
 $sync["WPFWin11ISOMountButton"].Add_Click({
     Invoke-WinUtilISOMountAndVerify
+})
+
+$sync.WPFWin11ISOEditionComboBox.Add_SelectionChanged({
+    if ($sync['Win11ISOOfflineSession']) {
+        Stop-WinUtilOfflineServicingSession -Session $sync['Win11ISOOfflineSession'] -Log { param($message) Write-WinUtilISOLog $message }
+        $sync['Win11ISOOfflineSession'] = $null
+        $sync['Win11ISOImageInventory'] = $null
+        Update-WinUtilComponentPolicyUI -SelectedProfileId ([string]$sync['Win11ISOSelectedProfileId'])
+    }
+    $sync.WPFWin11ISOModifyButton.IsEnabled = $false
+})
+
+$sync["WPFWin11ISOAnalyzeButton"].Add_Click({
+    Invoke-WinUtilISOAnalyze
 })
 
 $sync["WPFWin11ISOModifyButton"].Add_Click({

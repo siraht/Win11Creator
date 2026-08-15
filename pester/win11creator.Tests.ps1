@@ -37,6 +37,7 @@ Describe "Win11 Creator setup media" {
         }
 
         $script:modifyFunction = Get-WinUtilFunctionText -Path $script:isoWorkflowPath -FunctionName "Invoke-WinUtilISOModify"
+        $script:analyzeFunction = Get-WinUtilFunctionText -Path $script:isoWorkflowPath -FunctionName "Invoke-WinUtilISOAnalyze"
         $script:mountAndVerifyFunction = Get-WinUtilFunctionText -Path $script:isoWorkflowPath -FunctionName "Invoke-WinUtilISOMountAndVerify"
         $script:cleanAndResetFunction = Get-WinUtilFunctionText -Path $script:isoWorkflowPath -FunctionName "Invoke-WinUtilISOCleanAndReset"
         $script:exportFunction = Get-WinUtilFunctionText -Path $script:isoWorkflowPath -FunctionName "Invoke-WinUtilISOExport"
@@ -95,15 +96,11 @@ Describe "Win11 Creator setup media" {
         }
     }
 
-    It "starts each new ISO modification in a fresh working directory" {
-        foreach ($expectedText in @(
-            '$workDir = Join-Path $env:TEMP "WinUtil_Win11ISO_$(Get-Date -Format ''yyyyMMdd_HHmmss'')"',
-            '$workDir = Join-Path $env:TEMP "WinUtil_Win11ISO_$(Get-Date -Format ''yyyyMMdd_HHmmss'')_$(([guid]::NewGuid()).ToString(''N'').Substring(0, 8))"'
-        )) {
-            $script:modifyFunction | Should -Match ([regex]::Escape($expectedText))
-        }
-
-        $script:modifyFunction | Should -Not -Match ([regex]::Escape("Reusing existing temp directory"))
+    It "starts analysis in a fresh working directory and reuses that session for build" {
+        $script:analyzeFunction | Should -Match ([regex]::Escape('$workDir = Join-Path ([IO.Path]::GetTempPath()) "WinUtil_Win11ISO_$(Get-Date -Format ''yyyyMMdd_HHmmss'')_$(([guid]::NewGuid()).ToString(''N'').Substring(0, 8))"'))
+        $script:analyzeFunction | Should -Match 'Start-WinUtilOfflineServicingSession'
+        $script:modifyFunction | Should -Match ([regex]::Escape("`$workDir = [string]`$sync['Win11ISOWorkDir']"))
+        $script:modifyFunction | Should -Match 'OfflineServicingSession\s+\$offlineSession'
     }
 
     It "keeps WIM servicing limited to one driver-only mount and commit" {
@@ -177,7 +174,8 @@ Describe "Win11 Creator setup media" {
         $script:mountAndVerifyFunction | Should -Match ([regex]::Escape('$sync["WPFWin11ISOMountButton"].IsEnabled = $false'))
         $script:mountAndVerifyFunction | Should -Match ([regex]::Escape('$sync["WPFWin11ISOMountButton"].IsEnabled = $true'))
         $script:mountAndVerifyFunction | Should -Match ([regex]::Escape('$sync["WPFWin11ISOModifyButton"].IsEnabled = $false'))
-        $script:mountAndVerifyFunction | Should -Match ([regex]::Escape('$sync["WPFWin11ISOModifyButton"].IsEnabled = $true'))
+        $script:mountAndVerifyFunction | Should -Match ([regex]::Escape('$sync["WPFWin11ISOAnalyzeButton"].IsEnabled = $true'))
+        $script:mountAndVerifyFunction | Should -Not -Match ([regex]::Escape('$sync["WPFWin11ISOModifyButton"].IsEnabled = $true'))
     }
 
     It "blocks oversized install.esd before USB erase confirmation" {

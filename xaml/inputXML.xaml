@@ -1856,11 +1856,19 @@
                                         </ScrollViewer>
                                     </StackPanel>
                                 </Border>
+                                <StackPanel Orientation="Horizontal">
+                                <Button Name="WPFWin11ISOAnalyzeButton"
+                                        Content="Analyze Selected Edition"
+                                        HorizontalAlignment="Left"
+                                        Width="Auto" Padding="12,0" Margin="0,0,8,0"
+                                        Height="{DynamicResource ButtonHeight}"/>
                                 <Button Name="WPFWin11ISOModifyButton"
                                         Content="Run Windows ISO Modification and Creator"
                                         HorizontalAlignment="Left"
                                         Width="Auto" Padding="12,0"
-                                        Height="{DynamicResource ButtonHeight}"/>
+                                        Height="{DynamicResource ButtonHeight}"
+                                        IsEnabled="False"/>
+                                </StackPanel>
                             </StackPanel>
 
                             <!-- ─── STEP 4 : Output Options ───────────────────────── -->

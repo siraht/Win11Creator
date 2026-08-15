@@ -36,6 +36,7 @@ function Invoke-WinUtilISOScript {
         $ResolvedPlan,
         [AllowEmptyCollection()][object[]]$RegistryAction = @(),
         [string]$ManifestDirectory = '',
+        [psobject]$OfflineServicingSession,
         [scriptblock]$Log = { param($m) Write-Output $m }
     )
 
@@ -47,6 +48,7 @@ function Invoke-WinUtilISOScript {
             $ResolvedPlan,
             [object[]]$RegistryAction = @(),
             [string]$ManifestDirectory = '',
+            [psobject]$OfflineServicingSession,
             [scriptblock]$Logger
         )
 
@@ -207,7 +209,7 @@ function Invoke-WinUtilISOScript {
                 if ([string]::IsNullOrWhiteSpace($ManifestDirectory)) {
                     $ManifestDirectory = Join-Path $ContentRoot 'WinUtil-Manifests'
                 }
-                Invoke-WinUtilOfflineServicingTransaction -InstallImagePath $InstallImagePath -ImageIndex $InstallImageIndex -ResolvedPlan $ResolvedPlan -MountPath $mountDir -ManifestDirectory $ManifestDirectory -DriverDirectory $driverExportRoot -RegistryAction $RegistryAction -Log $Logger | Out-Null
+                Invoke-WinUtilOfflineServicingTransaction -InstallImagePath $InstallImagePath -ImageIndex $InstallImageIndex -ResolvedPlan $ResolvedPlan -MountPath $mountDir -ManifestDirectory $ManifestDirectory -DriverDirectory $driverExportRoot -RegistryAction $RegistryAction -Session $OfflineServicingSession -Log $Logger | Out-Null
             } else {
                 New-Item -Path $mountDir -ItemType Directory -Force | Out-Null
                 & $Logger "Mounting install.wim index $InstallImageIndex once for driver injection..."
@@ -548,12 +550,12 @@ $appxList
     Write-WinUtilISOEditionConfig -ContentRoot $ISOContentsDir -EditionId $InstallEditionId -Logger $Log
 
     if ($InjectCurrentSystemDrivers) {
-        Add-WinUtilISOStagedDrivers -ContentRoot $ISOContentsDir -Logger $Log -InstallImagePath $InstallImagePath -InstallImageIndex $InstallImageIndex -ResolvedPlan $ResolvedPlan -RegistryAction $RegistryAction -ManifestDirectory $ManifestDirectory
+        Add-WinUtilISOStagedDrivers -ContentRoot $ISOContentsDir -Logger $Log -InstallImagePath $InstallImagePath -InstallImageIndex $InstallImageIndex -ResolvedPlan $ResolvedPlan -RegistryAction $RegistryAction -ManifestDirectory $ManifestDirectory -OfflineServicingSession $OfflineServicingSession
     } elseif ($ResolvedPlan) {
         if ([string]::IsNullOrWhiteSpace($ManifestDirectory)) {
             $ManifestDirectory = Join-Path $ISOContentsDir 'WinUtil-Manifests'
         }
         $mountDir = Join-Path (Split-Path -Path $ISOContentsDir -Parent) 'wim_mount'
-        Invoke-WinUtilOfflineServicingTransaction -InstallImagePath $InstallImagePath -ImageIndex $InstallImageIndex -ResolvedPlan $ResolvedPlan -MountPath $mountDir -ManifestDirectory $ManifestDirectory -RegistryAction $RegistryAction -Log $Log | Out-Null
+        Invoke-WinUtilOfflineServicingTransaction -InstallImagePath $InstallImagePath -ImageIndex $InstallImageIndex -ResolvedPlan $ResolvedPlan -MountPath $mountDir -ManifestDirectory $ManifestDirectory -RegistryAction $RegistryAction -Session $OfflineServicingSession -Log $Log | Out-Null
     }
 }

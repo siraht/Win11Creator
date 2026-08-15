@@ -252,10 +252,10 @@ Describe 'Win11 Creator image-format callable paths' {
     It 'exports a copied ESD before servicing and remaps the selected edition to WIM index 1' {
         $exportIndex = $script:isoSource.IndexOf('Export-WinUtilEsdImageToWim')
         $removeCopiedEsdIndex = $script:isoSource.IndexOf('Remove-Item -LiteralPath $localWim')
-        $remapIndex = $script:isoSource.IndexOf('$selectedWimIndex = $exportResult.DestinationIndex')
-        $serviceIndex = $script:isoSource.IndexOf('Invoke-WinUtilISOScript -ISOContentsDir')
+        $remapIndex = $script:isoSource.IndexOf('$imageIndex = [int]$exportResult.DestinationIndex')
+        $serviceIndex = $script:isoSource.IndexOf('$session = Start-WinUtilOfflineServicingSession')
 
-        $script:isoSource | Should -Match ([regex]::Escape("[IO.Path]::GetExtension(`$localWim) -ieq '.esd'"))
+        $script:isoSource | Should -Match ([regex]::Escape("[string]`$copiedImage.Format -eq 'ESD'"))
         $exportIndex | Should -BeGreaterThan -1
         $removeCopiedEsdIndex | Should -BeGreaterThan $exportIndex
         $remapIndex | Should -BeGreaterThan $removeCopiedEsdIndex

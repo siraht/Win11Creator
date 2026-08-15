@@ -15,6 +15,10 @@ function Write-WinUtilISOLog {
 }
 
 function Invoke-WinUtilISOBrowse {
+    if ($sync['Win11ISOOfflineSession']) {
+        Stop-WinUtilOfflineServicingSession -Session $sync['Win11ISOOfflineSession'] -Log { param($message) Write-WinUtilISOLog $message }
+        $sync['Win11ISOOfflineSession'] = $null
+    }
     Add-Type -AssemblyName System.Windows.Forms
 
     $dlg = [System.Windows.Forms.OpenFileDialog]::new()
@@ -50,6 +54,7 @@ function Invoke-WinUtilISOMountAndVerify {
     Set-WinUtilTweaksProgressIndicator -Visible $true -Label "Mounting ISO..." -Percent 10
     $sync["WPFWin11ISOBrowseButton"].IsEnabled = $false
     $sync["WPFWin11ISOMountButton"].IsEnabled = $false
+    $sync["WPFWin11ISOAnalyzeButton"].IsEnabled = $false
     $sync["WPFWin11ISOModifyButton"].IsEnabled = $false
     $sync["Win11ISOProcessRunning"] = $true
 
@@ -120,7 +125,8 @@ function Invoke-WinUtilISOMountAndVerify {
                 }
                 $sync["WPFWin11ISOVerifyResultPanel"].Visibility = "Visible"
                 $sync["WPFWin11ISOModifySection"].Visibility = "Visible"
-                $sync["WPFWin11ISOModifyButton"].IsEnabled = $true
+                $sync["WPFWin11ISOAnalyzeButton"].IsEnabled = $true
+                $sync["WPFWin11ISOModifyButton"].IsEnabled = $false
             }
 
             Set-WinUtilTweaksProgressIndicator -Visible $true -Label "ISO verified" -Percent 100
@@ -139,10 +145,92 @@ function Invoke-WinUtilISOMountAndVerify {
             Invoke-WPFUIThread {
                 $sync["WPFWin11ISOBrowseButton"].IsEnabled = $true
                 $sync["WPFWin11ISOMountButton"].IsEnabled = $true
+                if ($sync["Win11ISOWimPath"]) { $sync["WPFWin11ISOAnalyzeButton"].IsEnabled = $true }
                 $sync["Win11ISOProcessRunning"] = $false
             }
         }
     }
+}
+
+function Invoke-WinUtilISOAnalyze {
+    $sourceImagePath = [string]$sync['Win11ISOWimPath']
+    if ([IO.Path]::GetExtension($sourceImagePath) -notin @('.wim', '.esd')) {
+        [System.Windows.MessageBox]::Show('Analyze requires sources\install.wim or sources\install.esd.', 'Unsupported Image Format', 'OK', 'Error')
+        return
+    }
+    $selectedItem = $sync.WPFWin11ISOEditionComboBox.SelectedItem
+    if (-not $selectedItem -or $selectedItem -notmatch '^(\d+):') {
+        [System.Windows.MessageBox]::Show('Select a Windows edition before analysis.', 'Edition Required', 'OK', 'Warning')
+        return
+    }
+    $imageIndex = [int]$Matches[1]
+    $imageName = $selectedItem -replace '^\d+:\s*', ''
+    if ($sync['Win11ISOOfflineSession']) {
+        Stop-WinUtilOfflineServicingSession -Session $sync['Win11ISOOfflineSession'] -Log { param($message) Write-WinUtilISOLog $message }
+        $sync['Win11ISOOfflineSession'] = $null
+    }
+
+    $workDir = Join-Path ([IO.Path]::GetTempPath()) "WinUtil_Win11ISO_$(Get-Date -Format 'yyyyMMdd_HHmmss')_$(([guid]::NewGuid()).ToString('N').Substring(0, 8))"
+    $driveLetter = [string]$sync['Win11ISODriveLetter']
+    $sync['Win11ISOProcessRunning'] = $true
+    $sync.WPFWin11ISOAnalyzeButton.IsEnabled = $false
+    $sync.WPFWin11ISOModifyButton.IsEnabled = $false
+    Write-WinUtilISOLog "Copying setup media and preparing $imageName (source index $imageIndex) for one-mount analysis..."
+
+    Invoke-WPFRunspace -ParameterList @(
+        ,('workDir', $workDir), ('driveLetter', $driveLetter),
+        ('imageIndex', $imageIndex), ('imageName', $imageName)
+    ) -ScriptBlock {
+        param($workDir, $driveLetter, $imageIndex, $imageName)
+        try {
+            $isoContents = Join-Path $workDir 'iso_contents'
+            New-Item -Path $isoContents -ItemType Directory -Force | Out-Null
+            & robocopy $driveLetter $isoContents /E /NFL /NDL /NJH /NJS | Out-Null
+            if ($LASTEXITCODE -gt 7) { throw "ISO copy failed with robocopy exit code $LASTEXITCODE." }
+            $copiedImage = Get-WinUtilInstallImage -MediaRoot $isoContents
+            $localWim = [string]$copiedImage.Path
+            if ([string]$copiedImage.Format -eq 'ESD') {
+                $exportedWim = Join-Path $isoContents 'sources\install.wim'
+                Write-WinUtilISOLog "Exporting selected ESD index $imageIndex before the analysis mount..."
+                $exportResult = Export-WinUtilEsdImageToWim `
+                    -SourceImagePath $localWim `
+                    -SourceImageIndex $imageIndex `
+                    -DestinationImagePath $exportedWim
+                Set-ItemProperty -LiteralPath $localWim -Name IsReadOnly -Value $false
+                Remove-Item -LiteralPath $localWim -Force -ErrorAction Stop
+                $localWim = [string]$exportResult.DestinationPath
+                $imageIndex = [int]$exportResult.DestinationIndex
+                $imageName = [string]$exportResult.Name
+                Write-WinUtilISOLog "ESD export validated as install.wim index $imageIndex ($imageName)."
+            }
+            if (-not (Test-Path -LiteralPath $localWim)) { throw "Prepared install.wim was not found: $localWim" }
+            Set-ItemProperty -LiteralPath $localWim -Name IsReadOnly -Value $false
+            $mountPath = Join-Path $workDir 'wim_mount'
+            $session = Start-WinUtilOfflineServicingSession -InstallImagePath $localWim -ImageIndex $imageIndex -ImageName $imageName -MountPath $mountPath -Log { param($message) Write-WinUtilISOLog $message }
+            $sync['Win11ISOWorkDir'] = $workDir
+            $sync['Win11ISOContentsDir'] = $isoContents
+            $sync['Win11ISOOfflineSession'] = $session
+            $sync['Win11ISOImageInventory'] = $session.Inventory
+            Resolve-WinUtilComponentPolicyHandoff | Out-Null
+            Write-WinUtilISOLog "Analysis ready: $(@($session.Inventory.Items).Count) inventory items. The copied image remains mounted for this build."
+        } catch {
+            Write-WinUtilISOLog "ERROR during edition analysis: $_"
+            if ($sync['Win11ISOOfflineSession'] -and [string]$sync['Win11ISOOfflineSession'].State -eq 'Mounted') {
+                Stop-WinUtilOfflineServicingSession -Session $sync['Win11ISOOfflineSession'] -Log { param($message) Write-WinUtilISOLog $message }
+            }
+            if (Test-Path -LiteralPath $workDir) { Remove-Item -LiteralPath $workDir -Recurse -Force -ErrorAction SilentlyContinue }
+            $sync['Win11ISOOfflineSession'] = $null
+            $sync['Win11ISOImageInventory'] = $null
+            Invoke-WPFUIThread {
+                $sync.WPFWin11ISOPolicyHandoffStatus.Text = "Analysis failed: $_"
+                $sync.WPFWin11ISOPolicyHandoffStatus.Foreground = 'OrangeRed'
+                $sync.WPFWin11ISOModifyButton.IsEnabled = $false
+            }
+        } finally {
+            $sync['Win11ISOProcessRunning'] = $false
+            Invoke-WPFUIThread { $sync.WPFWin11ISOAnalyzeButton.IsEnabled = $true }
+        }
+    } | Out-Null
 }
 
 function Invoke-WinUtilISOModify {
@@ -156,25 +244,27 @@ function Invoke-WinUtilISOModify {
             "Not Ready", "OK", "Warning")
         return
     }
-
-    $selectedItem     = $sync["WPFWin11ISOEditionComboBox"].SelectedItem
-    $selectedWimIndex = 1
-    if ($selectedItem -and $selectedItem -match '^(\d+):') {
-        $selectedWimIndex = [int]$Matches[1]
-    } elseif ($sync["Win11ISOImageInfo"]) {
-        $selectedWimIndex = $sync["Win11ISOImageInfo"][0].ImageIndex
+    try { $null = Resolve-WinUtilComponentPolicyHandoff } catch {
+        $sync.WPFWin11ISOPolicyHandoffStatus.Text = "Blocked: $_"
+        $sync.WPFWin11ISOPolicyHandoffStatus.Foreground = 'OrangeRed'
+        $sync.WPFWin11ISOModifyButton.IsEnabled = $false
+        return
     }
-    $selectedEditionName = if ($selectedItem) { ($selectedItem -replace '^\d+:\s*', '') } else { "Unknown" }
+    $offlineSession = $sync['Win11ISOOfflineSession']
+    if (-not $sync['Win11ISOPolicyHandoff'].IsReady -or -not $offlineSession -or [string]$offlineSession.State -ne 'Mounted') {
+        [System.Windows.MessageBox]::Show('Analyze the selected edition and resolve all blocking safety conflicts before building.', 'Build Not Ready', 'OK', 'Warning')
+        return
+    }
+
+    $selectedWimIndex = [int]$offlineSession.ImageIndex
+    $selectedEditionName = [string]$offlineSession.ImageName
     Write-WinUtilISOLog "Selected edition: $selectedEditionName (Index $selectedWimIndex)"
 
     $sync["WPFWin11ISOModifyButton"].IsEnabled = $false
     $sync["Win11ISOModifying"] = $true
     $sync["Win11ISOProcessRunning"] = $true
 
-    $workDir = Join-Path $env:TEMP "WinUtil_Win11ISO_$(Get-Date -Format 'yyyyMMdd_HHmmss')"
-    if (Test-Path $workDir) {
-        $workDir = Join-Path $env:TEMP "WinUtil_Win11ISO_$(Get-Date -Format 'yyyyMMdd_HHmmss')_$(([guid]::NewGuid()).ToString('N').Substring(0, 8))"
-    }
+    $workDir = [string]$sync['Win11ISOWorkDir']
 
     $autounattendContent = if ($WinUtilAutounattendXml) {
         $WinUtilAutounattendXml
@@ -201,29 +291,20 @@ function Invoke-WinUtilISOModify {
     $runspace.SessionStateProxy.SetVariable("injectDrivers",       $injectDrivers)
     $runspace.SessionStateProxy.SetVariable("resolvedPlan",       $resolvedPlan)
     $runspace.SessionStateProxy.SetVariable("registryActions",    $registryActions)
+    $runspace.SessionStateProxy.SetVariable("offlineSession",    $offlineSession)
 
     $isoScriptFuncDef   = "function Invoke-WinUtilISOScript {`n" + ${function:Invoke-WinUtilISOScript}.ToString() + "`n}"
     $win11ISOLogFuncDef = "function Write-WinUtilISOLog {`n"     + ${function:Write-WinUtilISOLog}.ToString()     + "`n}"
     $inventoryItemFuncDef = "function ConvertTo-WinUtilImageInventoryItem {`n" + ${function:ConvertTo-WinUtilImageInventoryItem}.ToString() + "`n}"
     $inventoryFuncDef = "function Get-WinUtilOfflineImageInventory {`n" + ${function:Get-WinUtilOfflineImageInventory}.ToString() + "`n}"
     $transactionFuncDef = "function Invoke-WinUtilOfflineServicingTransaction {`n" + ${function:Invoke-WinUtilOfflineServicingTransaction}.ToString() + "`n}"
-    $imageDismFuncDef = "function Invoke-WinUtilImageDism {`n" + ${function:Invoke-WinUtilImageDism}.ToString() + "`n}"
-    $metadataParserFuncDef = "function ConvertFrom-WinUtilWimMetadataOutput {`n" + ${function:ConvertFrom-WinUtilWimMetadataOutput}.ToString() + "`n}"
-    $checkedDismFuncDef = "function Invoke-WinUtilCheckedImageDism {`n" + ${function:Invoke-WinUtilCheckedImageDism}.ToString() + "`n}"
-    $imageIndexFuncDef = "function Get-WinUtilImageIndex {`n" + ${function:Get-WinUtilImageIndex}.ToString() + "`n}"
-    $imageMetadataFuncDef = "function Read-WinUtilImageDetail {`n" + ${function:Read-WinUtilImageDetail}.ToString() + "`n}"
-    $esdExportFuncDef = "function Export-WinUtilEsdImageToWim {`n" + ${function:Export-WinUtilEsdImageToWim}.ToString() + "`n}"
+    $stopSessionFuncDef = "function Stop-WinUtilOfflineServicingSession {`n" + ${function:Stop-WinUtilOfflineServicingSession}.ToString() + "`n}"
     $runspace.SessionStateProxy.SetVariable("isoScriptFuncDef",   $isoScriptFuncDef)
     $runspace.SessionStateProxy.SetVariable("win11ISOLogFuncDef", $win11ISOLogFuncDef)
     $runspace.SessionStateProxy.SetVariable("inventoryItemFuncDef", $inventoryItemFuncDef)
     $runspace.SessionStateProxy.SetVariable("inventoryFuncDef", $inventoryFuncDef)
     $runspace.SessionStateProxy.SetVariable("transactionFuncDef", $transactionFuncDef)
-    $runspace.SessionStateProxy.SetVariable("imageDismFuncDef", $imageDismFuncDef)
-    $runspace.SessionStateProxy.SetVariable("metadataParserFuncDef", $metadataParserFuncDef)
-    $runspace.SessionStateProxy.SetVariable("checkedDismFuncDef", $checkedDismFuncDef)
-    $runspace.SessionStateProxy.SetVariable("imageIndexFuncDef", $imageIndexFuncDef)
-    $runspace.SessionStateProxy.SetVariable("imageMetadataFuncDef", $imageMetadataFuncDef)
-    $runspace.SessionStateProxy.SetVariable("esdExportFuncDef", $esdExportFuncDef)
+    $runspace.SessionStateProxy.SetVariable("stopSessionFuncDef", $stopSessionFuncDef)
 
     $script = [Management.Automation.PowerShell]::Create()
     $script.Runspace = $runspace
@@ -233,12 +314,7 @@ function Invoke-WinUtilISOModify {
         . ([scriptblock]::Create($inventoryItemFuncDef))
         . ([scriptblock]::Create($inventoryFuncDef))
         . ([scriptblock]::Create($transactionFuncDef))
-        . ([scriptblock]::Create($imageDismFuncDef))
-        . ([scriptblock]::Create($metadataParserFuncDef))
-        . ([scriptblock]::Create($checkedDismFuncDef))
-        . ([scriptblock]::Create($imageIndexFuncDef))
-        . ([scriptblock]::Create($imageMetadataFuncDef))
-        . ([scriptblock]::Create($esdExportFuncDef))
+        . ([scriptblock]::Create($stopSessionFuncDef))
 
         function Log($msg) {
             $ts = (Get-Date).ToString("HH:mm:ss")
@@ -290,39 +366,20 @@ function Invoke-WinUtilISOModify {
                 $sync["WPFWin11ISOModifySection"].Visibility = "Collapsed"
             })
 
-            Log "Creating working directory: $workDir"
-            $isoContents = Join-Path $workDir "iso_contents"
-            New-Item -ItemType Directory -Path $isoContents -Force
-            SetProgress "Copying ISO contents..." 10
-
-            Log "Copying ISO contents from $driveLetter to $isoContents..."
-            & robocopy $driveLetter $isoContents /E /NFL /NDL /NJH /NJS
-            Log "ISO contents copied."
+            Log "Using the analyzed copied image and its existing mount: $($offlineSession.MountPath)"
+            $isoContents = [string]$sync['Win11ISOContentsDir']
             SetProgress "Preparing setup media..." 25
 
-            $sourceImageFileName = Split-Path $wimPath -Leaf
-            $localWim = Join-Path $isoContents "sources\$sourceImageFileName"
+            $sourceImageFileName = Split-Path ([string]$offlineSession.InstallImagePath) -Leaf
+            $localWim = [string]$offlineSession.InstallImagePath
             if (-not (Test-Path $localWim)) {
                 throw "Copied ISO image file not found: sources\$sourceImageFileName"
-            }
-            if ([IO.Path]::GetExtension($localWim) -ieq '.esd') {
-                $exportedWim = Join-Path $isoContents 'sources\install.wim'
-                Log "Exporting selected ESD index $selectedWimIndex to a single-index serviceable WIM..."
-                $exportResult = Export-WinUtilEsdImageToWim `
-                    -SourceImagePath $localWim `
-                    -SourceImageIndex $selectedWimIndex `
-                    -DestinationImagePath $exportedWim
-                Remove-Item -LiteralPath $localWim -Force -ErrorAction Stop
-                $localWim = $exportResult.DestinationPath
-                $sourceImageFileName = 'install.wim'
-                $selectedWimIndex = $exportResult.DestinationIndex
-                Log "ESD export validated: $($exportResult.Name), edition $($exportResult.Edition), WIM index $selectedWimIndex."
             }
             $selectedEditionId = Get-WinUtilEditionIdFromName -EditionName $selectedEditionName
 
             Log "Writing autounattend.xml and edition selection..."
             $manifestDirectory = Join-Path $workDir 'manifests'
-            Invoke-WinUtilISOScript -ISOContentsDir $isoContents -AutoUnattendXml $autounattendContent -InjectCurrentSystemDrivers $injectDrivers -InstallImagePath $localWim -InstallImageIndex $selectedWimIndex -InstallEditionId $selectedEditionId -ResolvedPlan $resolvedPlan -RegistryAction $registryActions -ManifestDirectory $manifestDirectory -Log { param($m) Log $m }
+            Invoke-WinUtilISOScript -ISOContentsDir $isoContents -AutoUnattendXml $autounattendContent -InjectCurrentSystemDrivers $injectDrivers -InstallImagePath $localWim -InstallImageIndex $selectedWimIndex -InstallEditionId $selectedEditionId -ResolvedPlan $resolvedPlan -RegistryAction $registryActions -ManifestDirectory $manifestDirectory -OfflineServicingSession $offlineSession -Log { param($m) Log $m }
 
             SetProgress "Preserving install image..." 70
             if ($resolvedPlan) {
@@ -348,6 +405,11 @@ function Invoke-WinUtilISOModify {
             })
         } catch {
             Log "ERROR during modification: $_"
+
+            if ($offlineSession -and [string]$offlineSession.State -eq 'Mounted') {
+                try { Stop-WinUtilOfflineServicingSession -Session $offlineSession -Log { param($message) Log $message } }
+                catch { Log "Warning: failed to discard servicing session: $_" }
+            }
 
             try {
                 $mountedISO = Get-DiskImage -ImagePath $isoPath
@@ -378,7 +440,7 @@ function Invoke-WinUtilISOModify {
                 $sync["WPFTweaksProgressLabel"].Text      = ""
                 $sync["WPFTweaksProgressLabel"].ToolTip   = ""
                 $sync["WPFTweaksProgressValue"].Value     = 0
-                $sync["WPFWin11ISOModifyButton"].IsEnabled = $true
+                $sync["WPFWin11ISOModifyButton"].IsEnabled = $false
                 if ($sync["WPFWin11ISOOutputSection"].Visibility -ne "Visible") {
                     $sync["WPFWin11ISOSelectSection"].Visibility = "Visible"
                     $sync["WPFWin11ISOMountSection"].Visibility  = "Visible"
@@ -433,6 +495,10 @@ function Invoke-WinUtilISOCleanAndReset {
             "This will delete the temporary working directory:`n`n$workDir`n`nAnd reset the interface back to the start.`n`nContinue?",
             "Clean & Reset", "YesNo", "Warning")
         if ($confirm -ne "Yes") { return }
+    }
+    if ($sync['Win11ISOOfflineSession']) {
+        Stop-WinUtilOfflineServicingSession -Session $sync['Win11ISOOfflineSession'] -Log { param($message) Write-WinUtilISOLog $message }
+        $sync['Win11ISOOfflineSession'] = $null
     }
 
     $sync["WPFWin11ISOCleanResetButton"].IsEnabled = $false
@@ -549,7 +615,7 @@ function Invoke-WinUtilISOCleanAndReset {
                 $sync["WPFWin11ISOModifySection"].Visibility     = "Collapsed"
                 $sync["WPFWin11ISOMountSection"].Visibility      = "Collapsed"
                 $sync["WPFWin11ISOSelectSection"].Visibility     = "Visible"
-                $sync["WPFWin11ISOModifyButton"].IsEnabled       = $true
+                $sync["WPFWin11ISOModifyButton"].IsEnabled       = $false
                 $sync["WPFWin11ISOCleanResetButton"].IsEnabled   = $true
 
                 $sync["WPFTweaksProgressBar"].Visibility = "Collapsed"
