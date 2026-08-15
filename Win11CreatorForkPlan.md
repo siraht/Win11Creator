@@ -311,10 +311,10 @@ Recommended shape:
   * **Proof required:** two profiles producing different resolved plans without changing code.
   * **Proof:** data profiles `default-winutil.json` and `lean-daw.json` (`619791e`, `ce91b13`) pass through the same adapter in `67880d5`; the integration test proves they produce different resolved actions without a code change.
 
-* [x] **Create `Default WinUtil` profile reproducing current behavior as closely as practical.**
+* [ ] **Create `Default WinUtil` profile reproducing current behavior as closely as practical.**
 
   * **Proof required:** resolved-action comparison against upstream behavior.
-  * **Proof:** the default profile contains no deep remove/disable action, the completeness test covers every catalog component, and the adapter resolves known inventory to keep/protected behavior; upstream Win11 Creator's driver-only/no-plan path remains unchanged when no resolved plan is supplied.
+  * **Implementation status:** the data profile is complete and resolves conservatively, but the upstream comparison exposed an unconditional legacy first-logon customization path outside the profile. Close this only after that behavior is intentionally mapped into profile-derived actions or retired with an explicit compatibility decision and tests.
 
 * [x] **Create `Lean DAW` profile.**
 
