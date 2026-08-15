@@ -67,6 +67,9 @@ Describe 'Offline servicing transaction boundary' {
             param ([Parameter(ValueFromRemainingArguments)][string[]]$Arguments)
             $script:dismCalls.Add(($Arguments -join '|'))
             $global:LASTEXITCODE = 0
+            if ($Arguments -contains '/CheckHealth' -or $Arguments -contains '/ScanHealth') {
+                'No component store corruption detected.'
+            }
         }
         function reg.exe {
             param ([Parameter(ValueFromRemainingArguments)][string[]]$Arguments)
@@ -104,9 +107,11 @@ Describe 'Offline servicing transaction boundary' {
         Should -Invoke Remove-WindowsCapability -Times 1 -Exactly -ParameterFilter { $Name -eq 'Remove.Capability~~~~0.0.1.0' }
         Should -Invoke Disable-WindowsOptionalFeature -Times 1 -Exactly -ParameterFilter { $FeatureName -eq 'DisableFeature' -and -not $Remove }
         Should -Invoke Remove-WindowsPackage -Times 1 -Exactly -ParameterFilter { $PackageName -eq 'Remove.Package~test' }
-        $script:dismCalls.Count | Should -Be 1
-        $script:dismCalls[0] | Should -Match '/Cleanup-Image\|/StartComponentCleanup'
-        $script:dismCalls[0] | Should -Not -Match 'ResetBase|WinSxS'
+        $script:dismCalls.Count | Should -Be 3
+        $script:dismCalls | Should -Contain ($script:dismCalls | Where-Object { $_ -match '/Cleanup-Image\|/StartComponentCleanup' })
+        $script:dismCalls | Where-Object { $_ -match '/CheckHealth' } | Should -HaveCount 1
+        $script:dismCalls | Where-Object { $_ -match '/ScanHealth' } | Should -HaveCount 1
+        ($script:dismCalls -join "`n") | Should -Not -Match 'ResetBase|WinSxS'
     }
 
     It 'never mutates protected, manual, or keep decisions' {
@@ -476,5 +481,30 @@ Describe 'Offline servicing transaction boundary' {
         Should -Invoke Remove-WindowsPackage -Times 2 -Exactly
         Should -Invoke Remove-WindowsPackage -Times 0 -Exactly -ParameterFilter { $PackageName -in @('WebView2~test', 'ClientCBS~test') }
         Should -Invoke Dismount-WindowsImage -Times 1 -Exactly -ParameterFilter { $Save }
+    }
+
+    It 'runs CheckHealth without ScanHealth when no servicing package is removed' {
+        $plan = [pscustomobject]@{ SchemaVersion = '1.0'; Safety = [pscustomobject]@{ IsAllowed = $true }; Decisions = @() }
+
+        Invoke-WinUtilOfflineServicingTransaction -InstallImagePath $script:wimPath -ImageIndex 6 -ResolvedPlan $plan -MountPath $script:mountPath -ManifestDirectory $script:manifestPath | Out-Null
+
+        $script:dismCalls | Where-Object { $_ -match '/CheckHealth' } | Should -HaveCount 1
+        $script:dismCalls | Where-Object { $_ -match '/ScanHealth' } | Should -HaveCount 0
+        Should -Invoke Dismount-WindowsImage -Times 1 -Exactly -ParameterFilter { $Save }
+    }
+
+    It 'discards when DISM health output reports a repairable component store' {
+        function dism.exe {
+            param ([Parameter(ValueFromRemainingArguments)][string[]]$Arguments)
+            $script:dismCalls.Add(($Arguments -join '|'))
+            $global:LASTEXITCODE = 0
+            if ($Arguments -contains '/CheckHealth') { 'The component store is repairable.' }
+        }
+        $plan = [pscustomobject]@{ SchemaVersion = '1.0'; Safety = [pscustomobject]@{ IsAllowed = $true }; Decisions = @() }
+
+        { Invoke-WinUtilOfflineServicingTransaction -InstallImagePath $script:wimPath -ImageIndex 6 -ResolvedPlan $plan -MountPath $script:mountPath -ManifestDirectory $script:manifestPath } |
+            Should -Throw '*component-store corruption*discarded*'
+        Should -Invoke Dismount-WindowsImage -Times 1 -Exactly -ParameterFilter { $Discard }
+        Should -Invoke Dismount-WindowsImage -Times 0 -Exactly -ParameterFilter { $Save }
     }
 }

@@ -112,6 +112,19 @@ function Invoke-WinUtilOfflineServicingTransaction {
             throw "DISM $Operation failed with exit code $LASTEXITCODE. $detail".Trim()
         }
         & $Log "DISM $Operation completed."
+        return @($output)
+    }
+
+    function Assert-WinUtilOfflineComponentStoreHealth {
+        param ([switch]$Scan)
+
+        $mode = if ($Scan) { '/ScanHealth' } else { '/CheckHealth' }
+        $operation = if ($Scan) { 'component-store-scan-health' } else { 'component-store-check-health' }
+        $output = @(Invoke-WinUtilOfflineDism -ArgumentList @('/English', "/Image:$MountPath", '/Cleanup-Image', $mode) -Operation $operation)
+        $text = $output -join "`n"
+        if ($text -match '(?im)component store (?:is repairable|cannot be repaired)|^\s*(?!No\b).*component store corruption (?:was )?detected') {
+            throw "DISM $operation reported component-store corruption; the offline transaction will be discarded."
+        }
     }
 
     function Write-WinUtilOfflineJson {
@@ -442,9 +455,13 @@ function Invoke-WinUtilOfflineServicingTransaction {
 
         Invoke-WinUtilOfflineRegistryActionBatch -Actions $RegistryAction
         if ($DriverDirectory) {
-            Invoke-WinUtilOfflineDism -ArgumentList @('/English', "/Image:$MountPath", '/Add-Driver', "/Driver:$DriverDirectory", '/Recurse') -Operation 'add-driver'
+            Invoke-WinUtilOfflineDism -ArgumentList @('/English', "/Image:$MountPath", '/Add-Driver', "/Driver:$DriverDirectory", '/Recurse') -Operation 'add-driver' | Out-Null
         }
-        Invoke-WinUtilOfflineDism -ArgumentList @('/English', "/Image:$MountPath", '/Cleanup-Image', '/StartComponentCleanup') -Operation 'component-cleanup'
+        Invoke-WinUtilOfflineDism -ArgumentList @('/English', "/Image:$MountPath", '/Cleanup-Image', '/StartComponentCleanup') -Operation 'component-cleanup' | Out-Null
+        Assert-WinUtilOfflineComponentStoreHealth
+        if (@($ResolvedPlan.Decisions | Where-Object { [string]$_.Kind -eq 'Package' -and [string]$_.Action -eq 'Remove' }).Count -gt 0) {
+            Assert-WinUtilOfflineComponentStoreHealth -Scan
+        }
 
         $after = Get-WinUtilOfflineImageInventory -MountedImagePath $MountPath -SourceImagePath $InstallImagePath -ImageIndex $ImageIndex -ImageName $ImageName -SystemApp $SystemAppDiscovery
         Assert-WinUtilDefenderAfterState -Targets $defenderTargets -AfterInventory $after
