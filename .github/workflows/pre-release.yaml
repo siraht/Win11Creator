@@ -6,7 +6,24 @@ permissions:
   pull-requests: write
 
 on:
-  workflow_dispatch: # Manual trigger added
+  workflow_dispatch:
+    inputs:
+      expected-state:
+        description: Installed Windows expected-state contract
+        required: true
+        type: choice
+        default: LeanDaw
+        options:
+          - LeanDaw
+          - StockControl
+      validation-depth:
+        description: Acceptance probe depth
+        required: true
+        type: choice
+        default: Release
+        options:
+          - Release
+          - Quick
 
 jobs:
   build-runspace:
@@ -90,8 +107,43 @@ jobs:
           name: winutil-ps1
           path: ./winutil.ps1
 
-  release:
+  installed-acceptance:
     needs: build-runspace
+    runs-on: [self-hosted, Windows, X64, win11creator-validation]
+    env:
+      WINUTIL_ABLETON_PATH: ${{ vars.WINUTIL_ABLETON_PATH }}
+      WINUTIL_VST3_PATHS: ${{ vars.WINUTIL_VST3_PATHS }}
+      WINUTIL_LATENCYMON_REPORT: ${{ vars.WINUTIL_LATENCYMON_REPORT }}
+      WINUTIL_DAW_SMOKE_COMMAND: ${{ vars.WINUTIL_DAW_SMOKE_COMMAND }}
+    steps:
+      - name: Checkout acceptance harness
+        uses: actions/checkout@v7
+
+      - name: Run installed Windows acceptance gate
+        shell: pwsh
+        run: |
+          $vst3Paths = @($env:WINUTIL_VST3_PATHS -split ';' | Where-Object { $_ })
+          ./tools/Invoke-WinUtilInstalledAcceptance.ps1 `
+            -ExpectedState '${{ inputs.expected-state }}' `
+            -Depth '${{ inputs.validation-depth }}' `
+            -OutputPath '${{ runner.temp }}\winutil-installed-acceptance.json' `
+            -AbletonPath $env:WINUTIL_ABLETON_PATH `
+            -Vst3Path $vst3Paths `
+            -LatencyMonReportPath $env:WINUTIL_LATENCYMON_REPORT `
+            -SmokeCommand $env:WINUTIL_DAW_SMOKE_COMMAND
+
+      - name: Upload installed acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: winutil-installed-acceptance
+          path: |
+            ${{ runner.temp }}\winutil-installed-acceptance.json
+            ${{ runner.temp }}\winutil-installed-acceptance.log
+          if-no-files-found: error
+
+  release:
+    needs: [build-runspace, installed-acceptance]
     runs-on: ubuntu-latest
     steps:
       - name: Download compiled script
