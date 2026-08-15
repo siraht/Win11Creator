@@ -138,9 +138,37 @@ Initialize-WinUtilComponentPolicyUI
 
 $sync.WPFWin11ISOProfileComboBox.Add_SelectionChanged({
     if ($sync.WPFWin11ISOProfileComboBox.SelectedValue) {
+        $sync['Win11ISOComponentActionOverrides'] = @{}
         Update-WinUtilComponentPolicyUI -SelectedProfileId ([string]$sync.WPFWin11ISOProfileComboBox.SelectedValue)
     }
 })
+
+$exclusiveChoiceSelectionHandler = [System.Windows.Controls.SelectionChangedEventHandler]{
+    param($uiSender, $uiEventArgs)
+    $null = $uiSender
+    if ($sync['Win11ISOUpdatingExclusiveChoices']) { return }
+    $comboBox = $uiEventArgs.OriginalSource
+    if ($comboBox -isnot [System.Windows.Controls.ComboBox] -or $null -eq $comboBox.DataContext -or -not $comboBox.SelectedValue) { return }
+
+    $result = Set-WinUtilExclusiveComponentChoice `
+        -ChoiceGroup $comboBox.DataContext `
+        -SelectedChoiceId ([string]$comboBox.SelectedValue) `
+        -ExistingOverrides $sync['Win11ISOComponentActionOverrides']
+    $sync['Win11ISOUpdatingExclusiveChoices'] = $true
+    try {
+        Update-WinUtilComponentPolicyUI `
+            -SelectedProfileId ([string]$sync['Win11ISOSelectedProfileId']) `
+            -ActionOverrides $result.ActionOverrides
+        $sync.WPFWin11ISOExpertWarning.Text = "Selected risk: $($result.Risk). $($result.Warning)"
+        $sync.WPFWin11ISOExpertWarning.Visibility = if ($result.Risk -in @('high', 'expert')) { 'Visible' } else { 'Collapsed' }
+    } finally {
+        $sync['Win11ISOUpdatingExclusiveChoices'] = $false
+    }
+}
+$sync.WPFWin11ISOExclusiveChoices.AddHandler(
+    [System.Windows.Controls.Primitives.Selector]::SelectionChangedEvent,
+    $exclusiveChoiceSelectionHandler
+)
 
 $refreshAdvancedPackageSelector = {
     if ($sync.Win11ISOImageInventory) {

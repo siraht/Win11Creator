@@ -1794,6 +1794,19 @@
                                                                Foreground="{DynamicResource MainForegroundColor}"/>
                                                 </Grid>
                                             </DataTemplate>
+                                            <DataTemplate x:Key="Win11ISOExclusiveChoiceTemplate">
+                                                <StackPanel Margin="4,5">
+                                                    <TextBlock Text="{Binding Name}" FontWeight="Bold"
+                                                               Foreground="{DynamicResource MainForegroundColor}"/>
+                                                    <TextBlock Text="{Binding Description}" TextWrapping="Wrap" Margin="0,2,0,5"
+                                                               Foreground="{DynamicResource MainForegroundColor}"/>
+                                                    <ComboBox ItemsSource="{Binding Options}" DisplayMemberPath="Name" SelectedValuePath="Id"
+                                                              SelectedValue="{Binding SelectedChoiceId, Mode=OneWay}" MinWidth="330"
+                                                              HorizontalAlignment="Left"/>
+                                                    <TextBlock Text="{Binding SelectedDescription}" TextWrapping="Wrap" Margin="0,4,0,0"
+                                                               Foreground="OrangeRed"/>
+                                                </StackPanel>
+                                            </DataTemplate>
                                             <DataTemplate x:Key="Win11ISOAdvancedPackageItemTemplate">
                                                 <Grid Margin="4,4">
                                                     <Grid.ColumnDefinitions>
@@ -1831,6 +1844,9 @@
                                             <StackPanel><TextBlock Text="Protected" FontWeight="Bold" Foreground="{DynamicResource MainForegroundColor}"/><TextBlock Name="WPFWin11ISOSummaryProtected" Text="0" Foreground="{DynamicResource MainForegroundColor}"/></StackPanel>
                                             <StackPanel><TextBlock Text="Estimated risk" FontWeight="Bold" Foreground="{DynamicResource MainForegroundColor}"/><TextBlock Name="WPFWin11ISOSummaryRisk" Text="SAFE" Foreground="{DynamicResource MainForegroundColor}"/></StackPanel>
                                         </UniformGrid>
+
+                                        <ItemsControl Name="WPFWin11ISOExclusiveChoices"
+                                                      ItemTemplate="{StaticResource Win11ISOExclusiveChoiceTemplate}"/>
 
                                         <ScrollViewer MaxHeight="430" VerticalScrollBarVisibility="Auto">
                                             <StackPanel>

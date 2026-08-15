@@ -21,7 +21,8 @@ function New-WinUtilComponentPolicyPresentation {
     param (
         [Parameter(Mandatory)][psobject]$Catalog,
         [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$Profiles,
-        [string]$SelectedProfileId = 'default-winutil'
+        [string]$SelectedProfileId = 'default-winutil',
+        [System.Collections.IDictionary]$ActionOverrides = @{}
     )
 
     $supportedProfileIds = @('default-winutil', 'lean-daw')
@@ -41,6 +42,9 @@ function New-WinUtilComponentPolicyPresentation {
     $items = foreach ($component in @($Catalog.components)) {
         $profileAction = if ($selectedProfile) { $selectedProfile.actions.PSObject.Properties[[string]$component.id] } else { $null }
         $action = if ($profileAction) { [string]$profileAction.Value } else { [string]$component.defaultAction }
+        if ($ActionOverrides.Contains([string]$component.id)) {
+            $action = ([string]$ActionOverrides[[string]$component.id]).ToLowerInvariant()
+        }
         [pscustomobject]@{
             Id          = [string]$component.id
             Name        = [string]$component.name
@@ -49,6 +53,47 @@ function New-WinUtilComponentPolicyPresentation {
             Risk        = [string]$component.risk
             Rationale   = [string]$component.reason
             Consequences = [string]$component.consequences
+        }
+    }
+
+    $exclusiveMemberIds = @($Catalog.exclusiveGroups.members | Sort-Object -Unique)
+    $choiceGroups = foreach ($exclusiveGroup in @($Catalog.exclusiveGroups)) {
+        $memberItems = @($items | Where-Object Id -in @($exclusiveGroup.members))
+        $activeItems = @($memberItems | Where-Object Action -in @('remove', 'disable'))
+        if ($activeItems.Count -gt 1) {
+            throw "Exclusive group '$($exclusiveGroup.id)' has more than one active choice."
+        }
+        $options = @(
+            [pscustomobject]@{
+                Id = 'keep'
+                Name = [string]$exclusiveGroup.keepLabel
+                ComponentId = ''
+                Action = 'keep'
+                Risk = 'safe'
+                Description = [string]$exclusiveGroup.description
+            }
+            foreach ($memberItem in $memberItems) {
+                [pscustomobject]@{
+                    Id = [string]$memberItem.Id
+                    Name = [string]$memberItem.Name
+                    ComponentId = [string]$memberItem.Id
+                    Action = 'disable'
+                    Risk = [string]$memberItem.Risk
+                    Description = [string]$memberItem.Consequences
+                }
+            }
+        )
+        $selectedChoiceId = if ($activeItems.Count -eq 1) { [string]$activeItems[0].Id } else { 'keep' }
+        $selectedOption = $options | Where-Object Id -eq $selectedChoiceId | Select-Object -First 1
+        [pscustomobject]@{
+            Id = [string]$exclusiveGroup.id
+            Name = [string]$exclusiveGroup.name
+            Description = [string]$exclusiveGroup.description
+            MemberIds = @($exclusiveGroup.members)
+            Options = @($options)
+            SelectedChoiceId = $selectedChoiceId
+            SelectedRisk = [string]$selectedOption.Risk
+            SelectedDescription = [string]$selectedOption.Description
         }
     }
 
@@ -63,13 +108,14 @@ function New-WinUtilComponentPolicyPresentation {
     $groups = foreach ($groupName in $groupNames) {
         [pscustomobject]@{
             Name = $groupName
-            Items = @($items | Where-Object Group -eq $groupName | Sort-Object Name)
+            Items = @($items | Where-Object { $_.Group -eq $groupName -and $_.Id -notin $exclusiveMemberIds } | Sort-Object Name)
         }
     }
 
     [pscustomobject]@{
         Profiles = @($profileOptions)
         SelectedProfileId = $SelectedProfileId
+        ChoiceGroups = @($choiceGroups)
         Summary = [pscustomobject]@{
             RemoveCount = @($items | Where-Object Action -eq 'remove').Count
             DisableCount = @($items | Where-Object Action -eq 'disable').Count
@@ -77,6 +123,41 @@ function New-WinUtilComponentPolicyPresentation {
             Risk = $estimatedRisk
         }
         Groups = @($groups)
+    }
+}
+
+function Set-WinUtilExclusiveComponentChoice {
+    <#
+    .SYNOPSIS
+        Converts one exclusive UI choice into mutually exclusive resolver overrides.
+    #>
+    param (
+        [Parameter(Mandatory)][psobject]$ChoiceGroup,
+        [Parameter(Mandatory)][string]$SelectedChoiceId,
+        [System.Collections.IDictionary]$ExistingOverrides = @{}
+    )
+
+    $selectedOption = @($ChoiceGroup.Options | Where-Object Id -eq $SelectedChoiceId) | Select-Object -First 1
+    if (-not $selectedOption) {
+        throw "Choice '$SelectedChoiceId' is not valid for exclusive group '$($ChoiceGroup.Id)'."
+    }
+
+    $overrides = @{}
+    foreach ($key in @($ExistingOverrides.Keys)) {
+        $overrides[[string]$key] = [string]$ExistingOverrides[$key]
+    }
+    foreach ($memberId in @($ChoiceGroup.MemberIds)) {
+        $overrides[[string]$memberId] = 'keep'
+    }
+    if (-not [string]::IsNullOrWhiteSpace([string]$selectedOption.ComponentId)) {
+        $overrides[[string]$selectedOption.ComponentId] = [string]$selectedOption.Action
+    }
+
+    [pscustomobject]@{
+        ActionOverrides = $overrides
+        SelectedChoiceId = [string]$selectedOption.Id
+        Risk = [string]$selectedOption.Risk
+        Warning = [string]$selectedOption.Description
     }
 }
 
@@ -246,14 +327,19 @@ function New-WinUtilComponentPolicyHandoff {
 }
 
 function Update-WinUtilComponentPolicyUI {
-    param ([Parameter(Mandatory)][string]$SelectedProfileId)
+    param (
+        [Parameter(Mandatory)][string]$SelectedProfileId,
+        [System.Collections.IDictionary]$ActionOverrides = @{}
+    )
 
     $model = New-WinUtilComponentPolicyPresentation `
         -Catalog $sync.configs.componentPolicy.catalog `
         -Profiles @($sync.configs.componentPolicy.profiles.PSObject.Properties.Value) `
-        -SelectedProfileId $SelectedProfileId
+        -SelectedProfileId $SelectedProfileId `
+        -ActionOverrides $ActionOverrides
     $sync.ComponentPolicyPresentation = $model
     $sync['Win11ISOSelectedProfileId'] = $SelectedProfileId
+    $sync['Win11ISOComponentActionOverrides'] = $ActionOverrides
     $sync['Win11ISOResolvedPlan'] = $null
     $sync['Win11ISORegistryActions'] = $null
     $sync['Win11ISOActionBundle'] = $null
@@ -263,26 +349,33 @@ function Update-WinUtilComponentPolicyUI {
         -ImageInventory $sync['Win11ISOImageInventory']
     $sync['Win11ISOPolicyHandoff'] = $handoff
 
-    Invoke-WPFUIThread {
-        $sync.WPFWin11ISOSummaryRemove.Text = [string]$model.Summary.RemoveCount
-        $sync.WPFWin11ISOSummaryDisable.Text = [string]$model.Summary.DisableCount
-        $sync.WPFWin11ISOSummaryProtected.Text = [string]$model.Summary.ProtectedCount
-        $sync.WPFWin11ISOSummaryRisk.Text = ([string]$model.Summary.Risk).ToUpperInvariant()
-        $sync.WPFWin11ISOPolicyHandoffStatus.Text = $handoff.Status
-        $sync.WPFWin11ISOPolicyHandoffStatus.Foreground = 'OrangeRed'
-        $sync.WPFWin11ISOModifyButton.IsEnabled = $false
-        $sync.WPFWin11ISOAdvancedPackageItems.ItemsSource = @()
+    $wasUpdatingExclusiveChoices = $sync['Win11ISOUpdatingExclusiveChoices'] -eq $true
+    $sync['Win11ISOUpdatingExclusiveChoices'] = $true
+    try {
+        Invoke-WPFUIThread {
+            $sync.WPFWin11ISOSummaryRemove.Text = [string]$model.Summary.RemoveCount
+            $sync.WPFWin11ISOSummaryDisable.Text = [string]$model.Summary.DisableCount
+            $sync.WPFWin11ISOSummaryProtected.Text = [string]$model.Summary.ProtectedCount
+            $sync.WPFWin11ISOSummaryRisk.Text = ([string]$model.Summary.Risk).ToUpperInvariant()
+            $sync.WPFWin11ISOPolicyHandoffStatus.Text = $handoff.Status
+            $sync.WPFWin11ISOPolicyHandoffStatus.Foreground = 'OrangeRed'
+            $sync.WPFWin11ISOModifyButton.IsEnabled = $false
+            $sync.WPFWin11ISOAdvancedPackageItems.ItemsSource = @()
+            $sync.WPFWin11ISOExclusiveChoices.ItemsSource = @($model.ChoiceGroups)
 
-        $groupControlNames = @{
-            'Apps' = 'WPFWin11ISOAppsItems'
-            'Windows Components' = 'WPFWin11ISOWindowsComponentsItems'
-            'Features & Capabilities' = 'WPFWin11ISOFeaturesItems'
-            'Privacy / Runtime' = 'WPFWin11ISOPrivacyItems'
-            'Developer / Virtualization' = 'WPFWin11ISODeveloperItems'
+            $groupControlNames = @{
+                'Apps' = 'WPFWin11ISOAppsItems'
+                'Windows Components' = 'WPFWin11ISOWindowsComponentsItems'
+                'Features & Capabilities' = 'WPFWin11ISOFeaturesItems'
+                'Privacy / Runtime' = 'WPFWin11ISOPrivacyItems'
+                'Developer / Virtualization' = 'WPFWin11ISODeveloperItems'
+            }
+            foreach ($group in $model.Groups) {
+                $sync[$groupControlNames[$group.Name]].ItemsSource = @($group.Items)
+            }
         }
-        foreach ($group in $model.Groups) {
-            $sync[$groupControlNames[$group.Name]].ItemsSource = @($group.Items)
-        }
+    } finally {
+        $sync['Win11ISOUpdatingExclusiveChoices'] = $wasUpdatingExclusiveChoices
     }
     if ($sync['Win11ISOImageInventory']) {
         Resolve-WinUtilComponentPolicyHandoff | Out-Null
@@ -295,6 +388,8 @@ function Update-WinUtilComponentPolicyUI {
 
 function Resolve-WinUtilComponentPolicyHandoff {
     $profileId = [string]$sync['Win11ISOSelectedProfileId']
+    $actionOverrides = $sync['Win11ISOComponentActionOverrides']
+    if ($null -eq $actionOverrides) { $actionOverrides = @{} }
     $selectedProfile = @($sync.configs.componentPolicy.profiles.PSObject.Properties.Value | Where-Object id -eq $profileId) | Select-Object -First 1
     if (-not $selectedProfile -and $profileId -eq 'custom') {
         $selectedProfile = [pscustomobject]@{
@@ -308,6 +403,7 @@ function Resolve-WinUtilComponentPolicyHandoff {
         -Inventory $sync['Win11ISOImageInventory'] `
         -Catalog $sync.configs.componentPolicy.catalog `
         -ComponentProfile $selectedProfile `
+        -ActionOverrides $actionOverrides `
         -OfflineSystemSelect $sync['Win11ISOOfflineSession'].OfflineSystemSelect `
         -ManualOverride @($sync['Win11ISOManualOverrides']) `
         -ExpertMode:($sync.WPFWin11ISOExpertMode.IsChecked -eq $true)
