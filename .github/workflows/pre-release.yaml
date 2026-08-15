@@ -124,8 +124,8 @@ jobs:
         run: |
           $vst3Paths = @($env:WINUTIL_VST3_PATHS -split ';' | Where-Object { $_ })
           ./tools/Invoke-WinUtilInstalledAcceptance.ps1 `
-            -ExpectedState '${{ inputs.expected-state }}' `
-            -Depth '${{ inputs.validation-depth }}' `
+            -ExpectedState '${{ inputs['expected-state'] }}' `
+            -Depth '${{ inputs['validation-depth'] }}' `
             -OutputPath '${{ runner.temp }}\winutil-installed-acceptance.json' `
             -AbletonPath $env:WINUTIL_ABLETON_PATH `
             -Vst3Path $vst3Paths `
