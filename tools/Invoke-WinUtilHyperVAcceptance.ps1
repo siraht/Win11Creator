@@ -49,22 +49,22 @@ function Get-WinUtilHyperVProvider {
         StartVM = { param ($VMName) Start-VM -Name $VMName -ErrorAction Stop | Out-Null }
         GetVMState = { param ($VMName) [string](Get-VM -Name $VMName -ErrorAction Stop).State }
         TestGuestReady = {
-            param ($VMName, $GuestCredential)
+            param ($VMName, [pscredential]$GuestCredential)
             try {
                 $ready = Invoke-Command -VMName $VMName -Credential $GuestCredential -ScriptBlock { Test-Path -LiteralPath "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" } -ErrorAction Stop
                 [bool]$ready
             } catch { $false }
         }
         CopyToGuest = {
-            param ($VMName, $GuestCredential, $SourcePath, $DestinationPath)
+            param ($VMName, [pscredential]$GuestCredential, $SourcePath, $DestinationPath)
             $session = New-PSSession -VMName $VMName -Credential $GuestCredential -ErrorAction Stop
             try {
-                Invoke-Command -Session $session -ScriptBlock { param ($Path) New-Item -Path (Split-Path -Parent $Path) -ItemType Directory -Force | Out-Null } -ArgumentList $DestinationPath
+                Invoke-Command -Session $session -ScriptBlock { New-Item -Path 'C:\ProgramData\WinUtilAcceptance' -ItemType Directory -Force | Out-Null }
                 Copy-Item -LiteralPath $SourcePath -Destination $DestinationPath -ToSession $session -Force -ErrorAction Stop
             } finally { Remove-PSSession -Session $session }
         }
         InvokeGuestAcceptance = {
-            param ($VMName, $GuestCredential, $HarnessPath, $ExpectedState, $Depth, $GuestOutputPath, $AbletonPath, $Vst3Path, $LatencyMonReportPath, $SmokeCommand)
+            param ($VMName, [pscredential]$GuestCredential, $HarnessPath, $ExpectedState, $Depth, $GuestOutputPath, $AbletonPath, $Vst3Path, $LatencyMonReportPath, $SmokeCommand)
             Invoke-Command -VMName $VMName -Credential $GuestCredential -ErrorAction Stop -ScriptBlock {
                 param ($HarnessPath, $ExpectedState, $Depth, $GuestOutputPath, $AbletonPath, $Vst3Path, $LatencyMonReportPath, $SmokeCommand)
                 & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $HarnessPath -ExpectedState $ExpectedState -Depth $Depth -OutputPath $GuestOutputPath -AbletonPath $AbletonPath -Vst3Path $Vst3Path -LatencyMonReportPath $LatencyMonReportPath -SmokeCommand $SmokeCommand
@@ -72,7 +72,7 @@ function Get-WinUtilHyperVProvider {
             } -ArgumentList $HarnessPath, $ExpectedState, $Depth, $GuestOutputPath, $AbletonPath, $Vst3Path, $LatencyMonReportPath, $SmokeCommand
         }
         CopyFromGuest = {
-            param ($VMName, $GuestCredential, $SourcePath, $DestinationPath)
+            param ($VMName, [pscredential]$GuestCredential, $SourcePath, $DestinationPath)
             $session = New-PSSession -VMName $VMName -Credential $GuestCredential -ErrorAction Stop
             try { Copy-Item -LiteralPath $SourcePath -Destination $DestinationPath -FromSession $session -Force -ErrorAction Stop } finally { Remove-PSSession -Session $session }
         }
@@ -130,7 +130,9 @@ function Invoke-WinUtilHyperVAcceptance {
     $failure = $null
     try {
         & $VMProvider.AssertHost $SwitchName
-        Add-Content -LiteralPath $logPath -Value "[$(& $VMProvider.Now)] Creating VM '$VMName' from '$IsoPath'."
+        $isoHash = (Get-FileHash -LiteralPath $IsoPath -Algorithm SHA256).Hash
+        $unattendHash = (Get-FileHash -LiteralPath $UnattendIsoPath -Algorithm SHA256).Hash
+        Add-Content -LiteralPath $logPath -Value "[$(& $VMProvider.Now)] Creating VM '$VMName' from '$IsoPath' SHA256=$isoHash; answer ISO SHA256=$unattendHash."
         $provisioningAttempted = $true
         & $VMProvider.CreateVM $VMName $SwitchName $VhdPath $VhdSizeBytes $MemoryStartupBytes $ProcessorCount $IsoPath $UnattendIsoPath | Out-Null
         & $VMProvider.StartVM $VMName

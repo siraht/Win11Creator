@@ -8,16 +8,8 @@ permissions:
 on:
   workflow_dispatch:
     inputs:
-      expected-state:
-        description: Installed Windows expected-state contract
-        required: true
-        type: choice
-        default: LeanDaw
-        options:
-          - LeanDaw
-          - StockControl
       validation-depth:
-        description: Acceptance probe depth
+        description: Lean DAW acceptance probe depth; StockControl always uses Quick
         required: true
         type: choice
         default: Release
@@ -111,6 +103,12 @@ jobs:
     needs: build-runspace
     runs-on: [self-hosted, Windows, X64, win11creator-validation]
     env:
+      WINUTIL_STOCK_CONTROL_ISO_PATH: ${{ vars.WINUTIL_STOCK_CONTROL_ISO_PATH }}
+      WINUTIL_LEAN_DAW_ISO_PATH: ${{ vars.WINUTIL_LEAN_DAW_ISO_PATH }}
+      WINUTIL_UNATTEND_ISO_PATH: ${{ vars.WINUTIL_UNATTEND_ISO_PATH }}
+      WINUTIL_HYPERV_SWITCH: ${{ vars.WINUTIL_HYPERV_SWITCH }}
+      WINUTIL_VM_GUEST_USERNAME: ${{ vars.WINUTIL_VM_GUEST_USERNAME }}
+      WINUTIL_VM_GUEST_PASSWORD: ${{ secrets.WINUTIL_VM_GUEST_PASSWORD }}
       WINUTIL_ABLETON_PATH: ${{ vars.WINUTIL_ABLETON_PATH }}
       WINUTIL_VST3_PATHS: ${{ vars.WINUTIL_VST3_PATHS }}
       WINUTIL_LATENCYMON_REPORT: ${{ vars.WINUTIL_LATENCYMON_REPORT }}
@@ -119,14 +117,46 @@ jobs:
       - name: Checkout acceptance harness
         uses: actions/checkout@v7
 
-      - name: Run installed Windows acceptance gate
+      - name: Install generated ISOs and run guest acceptance gates
         shell: pwsh
         run: |
+          foreach ($requiredValue in @{
+            WINUTIL_STOCK_CONTROL_ISO_PATH = $env:WINUTIL_STOCK_CONTROL_ISO_PATH
+            WINUTIL_LEAN_DAW_ISO_PATH = $env:WINUTIL_LEAN_DAW_ISO_PATH
+            WINUTIL_UNATTEND_ISO_PATH = $env:WINUTIL_UNATTEND_ISO_PATH
+            WINUTIL_HYPERV_SWITCH = $env:WINUTIL_HYPERV_SWITCH
+            WINUTIL_VM_GUEST_USERNAME = $env:WINUTIL_VM_GUEST_USERNAME
+            WINUTIL_VM_GUEST_PASSWORD = $env:WINUTIL_VM_GUEST_PASSWORD
+          }.GetEnumerator()) {
+            if (-not $requiredValue.Value) { throw "Required validation setting '$($requiredValue.Key)' is empty." }
+          }
+          $credential = [pscredential]::new(
+            $env:WINUTIL_VM_GUEST_USERNAME,
+            (ConvertTo-SecureString $env:WINUTIL_VM_GUEST_PASSWORD -AsPlainText -Force)
+          )
           $vst3Paths = @($env:WINUTIL_VST3_PATHS -split ';' | Where-Object { $_ })
-          ./tools/Invoke-WinUtilInstalledAcceptance.ps1 `
-            -ExpectedState '${{ inputs['expected-state'] }}' `
+
+          ./tools/Invoke-WinUtilHyperVAcceptance.ps1 `
+            -IsoPath $env:WINUTIL_STOCK_CONTROL_ISO_PATH `
+            -UnattendIsoPath $env:WINUTIL_UNATTEND_ISO_PATH `
+            -ExpectedState StockControl `
+            -Depth Quick `
+            -VMName 'WinUtil-Stock-${{ github.run_id }}-${{ github.run_attempt }}' `
+            -SwitchName $env:WINUTIL_HYPERV_SWITCH `
+            -VhdPath '${{ runner.temp }}\winutil-stock-${{ github.run_id }}-${{ github.run_attempt }}.vhdx' `
+            -OutputDirectory '${{ runner.temp }}\winutil-stock-acceptance-${{ github.run_id }}-${{ github.run_attempt }}' `
+            -GuestCredential $credential
+
+          ./tools/Invoke-WinUtilHyperVAcceptance.ps1 `
+            -IsoPath $env:WINUTIL_LEAN_DAW_ISO_PATH `
+            -UnattendIsoPath $env:WINUTIL_UNATTEND_ISO_PATH `
+            -ExpectedState LeanDaw `
             -Depth '${{ inputs['validation-depth'] }}' `
-            -OutputPath '${{ runner.temp }}\winutil-installed-acceptance.json' `
+            -VMName 'WinUtil-Lean-${{ github.run_id }}-${{ github.run_attempt }}' `
+            -SwitchName $env:WINUTIL_HYPERV_SWITCH `
+            -VhdPath '${{ runner.temp }}\winutil-lean-${{ github.run_id }}-${{ github.run_attempt }}.vhdx' `
+            -OutputDirectory '${{ runner.temp }}\winutil-lean-acceptance-${{ github.run_id }}-${{ github.run_attempt }}' `
+            -GuestCredential $credential `
             -AbletonPath $env:WINUTIL_ABLETON_PATH `
             -Vst3Path $vst3Paths `
             -LatencyMonReportPath $env:WINUTIL_LATENCYMON_REPORT `
@@ -138,8 +168,8 @@ jobs:
         with:
           name: winutil-installed-acceptance
           path: |
-            ${{ runner.temp }}\winutil-installed-acceptance.json
-            ${{ runner.temp }}\winutil-installed-acceptance.log
+            ${{ runner.temp }}\winutil-stock-acceptance-${{ github.run_id }}-${{ github.run_attempt }}\**
+            ${{ runner.temp }}\winutil-lean-acceptance-${{ github.run_id }}-${{ github.run_attempt }}\**
           if-no-files-found: error
 
   release:

@@ -134,3 +134,15 @@ Describe 'Hyper-V installed acceptance orchestration' {
         { Invoke-TestHyperVAcceptance -ProviderState $fake -OutputName 'bad-provider' } | Should -Throw "*boundary 'StartVM' must be a scriptblock*"
     }
 }
+
+Describe 'Release VM acceptance wiring' {
+    It 'HyperVAcceptance_ReleaseRunsBothGeneratedIsoContracts' {
+        $workflow = Get-Content -LiteralPath (Join-Path $script:repoRoot '.github/workflows/pre-release.yaml') -Raw
+        ([regex]::Matches($workflow, 'Invoke-WinUtilHyperVAcceptance\.ps1')).Count | Should -Be 2
+        $workflow | Should -Match '-ExpectedState StockControl'
+        $workflow | Should -Match '-ExpectedState LeanDaw'
+        $workflow | Should -Match 'WINUTIL_STOCK_CONTROL_ISO_PATH'
+        $workflow | Should -Match 'WINUTIL_LEAN_DAW_ISO_PATH'
+        $workflow | Should -Not -Match '(?m)^\s*\./tools/Invoke-WinUtilInstalledAcceptance\.ps1'
+    }
+}
