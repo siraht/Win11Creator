@@ -2,6 +2,10 @@ function Resolve-WinUtilComponentPolicyPlan {
     <#
         .SYNOPSIS
         Adapts a component catalog and profile into a safe offline image plan.
+
+        .PARAMETER OfflineSystemSelect
+        The mounted offline SYSTEM hive Select key. A single numeric Current value is
+        required before service operations can resolve a ControlSetNNN registry path.
     #>
     param (
         [Parameter(Mandatory)]$Inventory,
@@ -93,7 +97,7 @@ function Resolve-WinUtilComponentPolicyPlan {
                                     ComponentId = $componentId
                                     RelatedComponentId = $componentId
                                     Severity = 'unsupported-operation'
-                                    Reason = "Service '$($operation.serviceName)' requires one valid offline SYSTEM Select\\Current control-set value."
+                                    Reason = "Service '$($operation.serviceName)' requires one valid offline SYSTEM Select\Current control-set value."
                                     IsBlocking = $true
                                 })
                                 continue
@@ -152,14 +156,23 @@ function Resolve-WinUtilComponentPolicyPlan {
     $resolvedPlan = Resolve-WinUtilOfflineImagePolicy -Inventory $Inventory -Policy @($resolverRules)
     $resolvedPlan | Add-Member -NotePropertyName IsAllowed -NotePropertyValue $safety.IsAllowed
     $resolvedPlan | Add-Member -NotePropertyName Safety -NotePropertyValue $safety
+    $deduplicatedRegistryActions = @($registryActions | Group-Object {
+        '{0}|{1}|{2}|{3}|{4}|{5}' -f $_.Action, $_.Hive, $_.Key, $_.Name, $_.Type, $_.Value
+    } | ForEach-Object { $_.Group[0] })
+    $deduplicatedSetupActions = @($setupActions | Group-Object {
+        '{0}|{1}|{2}|{3}' -f $_.Mechanism, $_.Phase, $_.Executable, ($_.Arguments -join '|')
+    } | ForEach-Object { $_.Group[0] })
+    $requiresSetupStaging = $deduplicatedSetupActions.Count -gt 0
     $actionBundle = [pscustomobject][ordered]@{
         SchemaVersion = '1.0'
         ProfileId = [string]$ComponentProfile.id
         IsAllowed = $safety.IsAllowed
+        IsReady = $safety.IsAllowed -and -not $requiresSetupStaging
+        RequiresSetupStaging = $requiresSetupStaging
         Safety = $safety
         ResolvedPlan = $resolvedPlan
-        RegistryActions = @($registryActions)
-        SetupActions = @($setupActions)
+        RegistryActions = $deduplicatedRegistryActions
+        SetupActions = $deduplicatedSetupActions
     }
 
     [pscustomobject]@{

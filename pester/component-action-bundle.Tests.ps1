@@ -32,6 +32,8 @@ Describe 'Typed component action bundle' {
         $bundle.SchemaVersion | Should -Be '1.0'
         $bundle.Safety | Should -Be $result.Safety
         $bundle.IsAllowed | Should -BeTrue
+        $bundle.IsReady | Should -BeFalse
+        $bundle.RequiresSetupStaging | Should -BeTrue
         $bundle.RegistryActions.Name | Should -Contain 'DisableSearchBoxSuggestions'
         $bundle.RegistryActions.Name | Should -Contain 'EnableLUA'
         $bundle.RegistryActions | Where-Object {
@@ -62,6 +64,7 @@ Describe 'Typed component action bundle' {
 
         $result.ActionBundle.RegistryActions | Should -HaveCount 0
         $result.ActionBundle.SetupActions | Should -HaveCount 0
+        $result.ActionBundle.IsReady | Should -BeTrue
     }
 
     It 'ActionBundle_AmbiguousControlSet_PlantedNegative' {
@@ -72,6 +75,22 @@ Describe 'Typed component action bundle' {
             $_.Severity -eq 'unsupported-operation' -and $_.Reason -match 'one valid offline SYSTEM'
         } | Should -Not -BeNullOrEmpty
         $result.ActionBundle.RegistryActions | Where-Object Hive -eq 'SYSTEM' | Should -HaveCount 0
+    }
+
+    It 'ActionBundle_MissingControlSet_PlantedNegative' {
+        $result = Resolve-WinUtilComponentPolicyPlan -Inventory $script:inventory -Catalog $script:catalog -Profile $script:leanProfile -ExpertMode
+
+        $result.ActionBundle.IsAllowed | Should -BeFalse
+        $result.ActionBundle.Safety.Conflicts.Reason | Should -Contain "Service 'WSearch' requires one valid offline SYSTEM Select\Current control-set value."
+    }
+
+    It 'ActionBundle_DeduplicatesExactOperations' {
+        $duplicateCatalog = $script:catalog | ConvertTo-Json -Depth 30 | ConvertFrom-Json
+        $bingTarget = ($duplicateCatalog.components | Where-Object id -eq 'bing-search').targets[0]
+        $bingTarget.operations = @($bingTarget.operations[0], $bingTarget.operations[0])
+        $result = Resolve-WinUtilComponentPolicyPlan -Inventory $script:inventory -Catalog $duplicateCatalog -Profile $script:leanProfile -OfflineSystemSelect ([pscustomobject]@{ Current = 1 }) -ExpertMode
+
+        $result.ActionBundle.RegistryActions | Where-Object Name -eq 'DisableSearchBoxSuggestions' | Should -HaveCount 1
     }
 
     It 'ActionBundle_MalformedRegistryMetadata_PlantedNegative' {
