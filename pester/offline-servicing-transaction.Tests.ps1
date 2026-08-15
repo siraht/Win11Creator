@@ -148,6 +148,45 @@ Describe 'Offline servicing transaction boundary' {
         (Get-Content (Join-Path $script:manifestPath 'ImageInventory.diff.json') -Raw | ConvertFrom-Json).Changes.Count | Should -Be 4
     }
 
+    It 'refuses stale manifest evidence before mounting or changing it' {
+        New-Item -Path $script:manifestPath -ItemType Directory | Out-Null
+        $stalePath = Join-Path $script:manifestPath 'existing-evidence.txt'
+        Set-Content -LiteralPath $stalePath -Value 'previous build evidence'
+        $plan = [pscustomobject]@{ SchemaVersion = '1.0'; Decisions = @() }
+
+        { Invoke-WinUtilOfflineServicingTransaction -InstallImagePath $script:wimPath -ImageIndex 6 -ResolvedPlan $plan -MountPath $script:mountPath -ManifestDirectory $script:manifestPath } |
+            Should -Throw '*destination already exists*refusing stale evidence*'
+
+        (Get-Content -LiteralPath $stalePath -Raw).Trim() | Should -Be 'previous build evidence'
+        @(Get-ChildItem -LiteralPath $script:manifestPath -Force).Count | Should -Be 1
+        Should -Invoke Mount-WindowsImage -Times 0 -Exactly
+        Should -Invoke Dismount-WindowsImage -Times 0 -Exactly
+    }
+
+    It 'leaves no partial final set and preserves unrelated data on a concurrent publication failure' {
+        $unrelatedPath = Join-Path $script:testRoot 'unrelated-build'
+        New-Item -Path $unrelatedPath -ItemType Directory | Out-Null
+        Set-Content -LiteralPath (Join-Path $unrelatedPath 'keep.txt') -Value 'keep me'
+        $publishWithRace = {
+            param($source, $destination)
+            $sourceFiles = @(Get-ChildItem -LiteralPath $source -File)
+            $sourceFiles.Count | Should -Be 5
+            New-Item -Path $destination -ItemType Directory -ErrorAction Stop | Out-Null
+            Set-Content -LiteralPath (Join-Path $destination 'concurrent.txt') -Value 'another publisher'
+            throw 'injected concurrent destination'
+        }
+        $plan = [pscustomobject]@{ SchemaVersion = '1.0'; Decisions = @() }
+
+        { Invoke-WinUtilOfflineServicingTransaction -InstallImagePath $script:wimPath -ImageIndex 6 -ResolvedPlan $plan -MountPath $script:mountPath -ManifestDirectory $script:manifestPath -PublishManifestSet $publishWithRace } |
+            Should -Throw '*image was committed*atomic manifest publication failed*concurrent destination*'
+
+        Should -Invoke Dismount-WindowsImage -Times 1 -Exactly -ParameterFilter { $Save }
+        Should -Invoke Dismount-WindowsImage -Times 0 -Exactly -ParameterFilter { $Discard }
+        @(Get-ChildItem -LiteralPath $script:manifestPath -Force).Name | Should -Be @('concurrent.txt')
+        (Get-Content -LiteralPath (Join-Path $unrelatedPath 'keep.txt') -Raw).Trim() | Should -Be 'keep me'
+        @(Get-ChildItem -LiteralPath $script:testRoot -Directory -Force | Where-Object Name -Like '.manifests.pending-*').Count | Should -Be 0
+    }
+
     It 'loads only an explicitly requested offline registry hive and unloads it' {
         $plan = [pscustomobject]@{ SchemaVersion = '1.0'; Decisions = @() }
         $registryAction = @([pscustomobject]@{

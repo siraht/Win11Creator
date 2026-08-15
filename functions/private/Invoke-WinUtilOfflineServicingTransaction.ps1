@@ -99,6 +99,7 @@ function Invoke-WinUtilOfflineServicingTransaction {
         [AllowEmptyCollection()][object[]]$SecurityOperation = @(),
         [AllowEmptyCollection()][object[]]$SystemAppDiscovery = @(),
         [psobject]$Session,
+        [scriptblock]$PublishManifestSet = { param($source, $destination) [System.IO.Directory]::Move($source, $destination) },
         [scriptblock]$Log = { param($message) Write-Output $message }
     )
 
@@ -298,9 +299,18 @@ function Invoke-WinUtilOfflineServicingTransaction {
     if ($DriverDirectory -and -not (Test-Path -LiteralPath $DriverDirectory)) { throw "Driver directory was not found: $DriverDirectory" }
     $defenderTargets = @(Assert-WinUtilDefenderSecurityOperation -Operations $SecurityOperation -Plan $ResolvedPlan)
 
-    New-Item -Path $ManifestDirectory -ItemType Directory -Force | Out-Null
-    $pendingManifestDirectory = Join-Path $ManifestDirectory ".pending-$(([guid]::NewGuid()).ToString('N'))"
-    New-Item -Path $pendingManifestDirectory -ItemType Directory -Force | Out-Null
+    $manifestFullPath = [System.IO.Path]::GetFullPath($ManifestDirectory)
+    $manifestParent = Split-Path $manifestFullPath -Parent
+    $manifestLeaf = Split-Path $manifestFullPath -Leaf
+    if ([string]::IsNullOrWhiteSpace($manifestParent) -or [string]::IsNullOrWhiteSpace($manifestLeaf)) {
+        throw "Manifest directory must identify a non-root publication directory: $ManifestDirectory"
+    }
+    New-Item -Path $manifestParent -ItemType Directory -Force | Out-Null
+    if (Test-Path -LiteralPath $manifestFullPath) {
+        throw "Transaction manifest destination already exists; refusing stale evidence: $manifestFullPath"
+    }
+    $pendingManifestDirectory = Join-Path $manifestParent ".$manifestLeaf.pending-$(([guid]::NewGuid()).ToString('N'))"
+    New-Item -Path $pendingManifestDirectory -ItemType Directory -ErrorAction Stop | Out-Null
     $mounted = $false
     $committed = $false
     $sessionStartHandledCleanup = $false
@@ -386,10 +396,12 @@ function Invoke-WinUtilOfflineServicingTransaction {
         $mounted = $false
         $committed = $true
         if ($Session) { $Session.State = 'Committed' }
-        foreach ($manifestName in 'ResolvedPlan.json', 'ResolvedPlan.txt', 'ImageInventory.before.json', 'ImageInventory.after.json', 'ImageInventory.diff.json') {
-            Move-Item -LiteralPath (Join-Path $pendingManifestDirectory $manifestName) -Destination (Join-Path $ManifestDirectory $manifestName) -Force
+        try {
+            & $PublishManifestSet $pendingManifestDirectory $manifestFullPath
+        } catch {
+            throw "Offline image was committed, but atomic manifest publication failed: $_"
         }
-        return [pscustomobject][ordered]@{ Before = $before; After = $after; Diff = $diff; ManifestDirectory = $ManifestDirectory }
+        return [pscustomobject][ordered]@{ Before = $before; After = $after; Diff = $diff; ManifestDirectory = $manifestFullPath }
     } finally {
         $requiresDiscard = $mounted
         if (-not $committed -and -not $requiresDiscard -and -not $sessionStartHandledCleanup) {
