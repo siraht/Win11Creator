@@ -63,7 +63,7 @@ function Invoke-WinUtilCheckedImageDism {
     return @($result.Output)
 }
 
-function Get-WinUtilImageIndexes {
+function Get-WinUtilImageIndex {
     param (
         [Parameter(Mandatory)][string]$ImagePath,
         [Parameter(Mandatory)][scriptblock]$InvokeDism
@@ -77,7 +77,7 @@ function Get-WinUtilImageIndexes {
     })
 }
 
-function Get-WinUtilImageMetadata {
+function Read-WinUtilImageDetail {
     param (
         [Parameter(Mandatory)][string]$ImagePath,
         [Parameter(Mandatory)][int]$ImageIndex,
@@ -115,7 +115,7 @@ function Export-WinUtilEsdImageToWim {
         throw "Destination WIM already exists: $DestinationImagePath"
     }
 
-    $availableIndexes = @(Get-WinUtilImageIndexes -ImagePath $SourceImagePath -InvokeDism $InvokeDism)
+    $availableIndexes = @(Get-WinUtilImageIndex -ImagePath $SourceImagePath -InvokeDism $InvokeDism)
     if ($availableIndexes.Count -eq 0) {
         throw 'Source ESD did not report any image indexes.'
     }
@@ -123,7 +123,7 @@ function Export-WinUtilEsdImageToWim {
         throw "Selected ESD index $SourceImageIndex is outside available indexes: $($availableIndexes -join ', ')."
     }
 
-    $sourceMetadata = Get-WinUtilImageMetadata -ImagePath $SourceImagePath -ImageIndex $SourceImageIndex -InvokeDism $InvokeDism
+    $sourceMetadata = Read-WinUtilImageDetail -ImagePath $SourceImagePath -ImageIndex $SourceImageIndex -InvokeDism $InvokeDism
     foreach ($requiredKey in 'Name', 'Edition') {
         if ([string]::IsNullOrWhiteSpace([string]$sourceMetadata[$requiredKey]) -or [string]$sourceMetadata[$requiredKey] -eq '<undefined>') {
             throw "Source ESD metadata is invalid: $requiredKey is undefined."
@@ -145,11 +145,11 @@ function Export-WinUtilEsdImageToWim {
             throw 'DISM ESD export reported success but did not create the destination WIM.'
         }
 
-        $exportedIndexes = @(Get-WinUtilImageIndexes -ImagePath $temporaryPath -InvokeDism $InvokeDism)
+        $exportedIndexes = @(Get-WinUtilImageIndex -ImagePath $temporaryPath -InvokeDism $InvokeDism)
         if ($exportedIndexes.Count -ne 1 -or $exportedIndexes[0] -ne 1) {
             throw "Exported WIM must contain exactly index 1; found: $($exportedIndexes -join ', ')."
         }
-        $exportedMetadata = Get-WinUtilImageMetadata -ImagePath $temporaryPath -ImageIndex 1 -InvokeDism $InvokeDism
+        $exportedMetadata = Read-WinUtilImageDetail -ImagePath $temporaryPath -ImageIndex 1 -InvokeDism $InvokeDism
         foreach ($metadataKey in 'Name', 'Description', 'Edition', 'Installation', 'Architecture') {
             $before = [string]$sourceMetadata[$metadataKey]
             $after = [string]$exportedMetadata[$metadataKey]
@@ -159,6 +159,9 @@ function Export-WinUtilEsdImageToWim {
         }
 
         Move-Item -LiteralPath $temporaryPath -Destination $DestinationImagePath -ErrorAction Stop
+        if (-not (Test-Path -LiteralPath $DestinationImagePath -PathType Leaf)) {
+            throw 'Validated WIM could not be made durable at the destination path.'
+        }
         [pscustomobject]@{
             SourcePath = $SourceImagePath
             SourceIndex = $SourceImageIndex

@@ -1,4 +1,4 @@
-function Prepare-WinUtilFat32Image {
+function ConvertTo-WinUtilFat32Image {
     <#
     .SYNOPSIS
         Prepares install.wim for FAT32 output, splitting only when necessary.

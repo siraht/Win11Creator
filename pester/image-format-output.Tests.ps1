@@ -170,7 +170,7 @@ Describe 'Win11 Creator selected ESD export' {
 Describe 'Win11 Creator FAT32 WIM preparation' {
     BeforeAll {
         $script:repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-        . (Join-Path $script:repoRoot 'functions/private/Prepare-WinUtilFat32Image.ps1')
+        . (Join-Path $script:repoRoot 'functions/private/ConvertTo-WinUtilFat32Image.ps1')
     }
 
     BeforeEach {
@@ -188,7 +188,7 @@ Describe 'Win11 Creator FAT32 WIM preparation' {
         Set-Content -LiteralPath $script:installWim -Value 'small wim'
         $invokeSplit = { throw 'split must not run for a small WIM' }
 
-        $result = Prepare-WinUtilFat32Image -ImagePath $script:installWim -DestinationDirectory $script:destinationRoot -SplitThresholdBytes 1MB -InvokeSplit $invokeSplit
+        $result = ConvertTo-WinUtilFat32Image -ImagePath $script:installWim -DestinationDirectory $script:destinationRoot -SplitThresholdBytes 1MB -InvokeSplit $invokeSplit
 
         $result.Mode | Should -Be 'Copy'
         $result.ExcludeSourceImage | Should -BeFalse
@@ -206,7 +206,7 @@ Describe 'Win11 Creator FAT32 WIM preparation' {
             Set-Content -LiteralPath (Join-Path (Split-Path $splitPath -Parent) 'install2.swm') -Value 'segment two'
         }
 
-        $result = Prepare-WinUtilFat32Image -ImagePath $script:installWim -DestinationDirectory $script:destinationRoot -SplitThresholdBytes 16 -SplitSizeMB 3800 -InvokeSplit $invokeSplit
+        $result = ConvertTo-WinUtilFat32Image -ImagePath $script:installWim -DestinationDirectory $script:destinationRoot -SplitThresholdBytes 16 -SplitSizeMB 3800 -InvokeSplit $invokeSplit
 
         $result.Mode | Should -Be 'Split'
         $result.ExcludeSourceImage | Should -BeTrue
@@ -226,7 +226,7 @@ Describe 'Win11 Creator FAT32 WIM preparation' {
             throw 'injected split failure'
         }
 
-        { Prepare-WinUtilFat32Image -ImagePath $script:installWim -DestinationDirectory $script:destinationRoot -SplitThresholdBytes 16 -InvokeSplit $invokeSplit } |
+        { ConvertTo-WinUtilFat32Image -ImagePath $script:installWim -DestinationDirectory $script:destinationRoot -SplitThresholdBytes 16 -InvokeSplit $invokeSplit } |
             Should -Throw '*injected split failure*'
 
         @(Get-ChildItem -LiteralPath $script:destinationRoot -Filter 'install*.swm').Count | Should -Be 0
@@ -237,7 +237,39 @@ Describe 'Win11 Creator FAT32 WIM preparation' {
         [IO.File]::WriteAllBytes($script:installWim, [byte[]](1..32))
         $invokeSplit = { param($sourcePath, $splitPath, $fileSizeMB); $null = $sourcePath, $splitPath, $fileSizeMB }
 
-        { Prepare-WinUtilFat32Image -ImagePath $script:installWim -DestinationDirectory $script:destinationRoot -SplitThresholdBytes 16 -InvokeSplit $invokeSplit } |
+        { ConvertTo-WinUtilFat32Image -ImagePath $script:installWim -DestinationDirectory $script:destinationRoot -SplitThresholdBytes 16 -InvokeSplit $invokeSplit } |
             Should -Throw '*did not create install.swm*'
+    }
+}
+
+Describe 'Win11 Creator image-format callable paths' {
+    BeforeAll {
+        $script:repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+        $script:isoSource = Get-Content -LiteralPath (Join-Path $script:repoRoot 'functions/private/Invoke-WinUtilISO.ps1') -Raw
+        $script:usbSource = Get-Content -LiteralPath (Join-Path $script:repoRoot 'functions/private/Invoke-WinUtilISOUSB.ps1') -Raw
+    }
+
+    It 'exports a copied ESD before servicing and remaps the selected edition to WIM index 1' {
+        $exportIndex = $script:isoSource.IndexOf('Export-WinUtilEsdImageToWim')
+        $removeCopiedEsdIndex = $script:isoSource.IndexOf('Remove-Item -LiteralPath $localWim')
+        $remapIndex = $script:isoSource.IndexOf('$selectedWimIndex = $exportResult.DestinationIndex')
+        $serviceIndex = $script:isoSource.IndexOf('Invoke-WinUtilISOScript -ISOContentsDir')
+
+        $script:isoSource | Should -Match ([regex]::Escape("[IO.Path]::GetExtension(`$localWim) -ieq '.esd'"))
+        $exportIndex | Should -BeGreaterThan -1
+        $removeCopiedEsdIndex | Should -BeGreaterThan $exportIndex
+        $remapIndex | Should -BeGreaterThan $removeCopiedEsdIndex
+        $serviceIndex | Should -BeGreaterThan $remapIndex
+    }
+
+    It 'injects FAT32 preparation into the USB runspace and excludes WIM only after a split' {
+        $script:usbSource | Should -Match ([regex]::Escape('${function:ConvertTo-WinUtilFat32Image}.ToString()'))
+        $prepareIndex = $script:usbSource.IndexOf('ConvertTo-WinUtilFat32Image `')
+        $excludeIndex = $script:usbSource.IndexOf('& robocopy $contentsDir $usbDrive /E /XF install.wim')
+        $readyIndex = $script:usbSource.IndexOf('USB drive is ready for use.')
+
+        $prepareIndex | Should -BeGreaterThan -1
+        $excludeIndex | Should -BeGreaterThan $prepareIndex
+        $readyIndex | Should -BeGreaterThan $excludeIndex
     }
 }

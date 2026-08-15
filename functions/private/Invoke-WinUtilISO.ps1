@@ -207,11 +207,23 @@ function Invoke-WinUtilISOModify {
     $inventoryItemFuncDef = "function ConvertTo-WinUtilImageInventoryItem {`n" + ${function:ConvertTo-WinUtilImageInventoryItem}.ToString() + "`n}"
     $inventoryFuncDef = "function Get-WinUtilOfflineImageInventory {`n" + ${function:Get-WinUtilOfflineImageInventory}.ToString() + "`n}"
     $transactionFuncDef = "function Invoke-WinUtilOfflineServicingTransaction {`n" + ${function:Invoke-WinUtilOfflineServicingTransaction}.ToString() + "`n}"
+    $imageDismFuncDef = "function Invoke-WinUtilImageDism {`n" + ${function:Invoke-WinUtilImageDism}.ToString() + "`n}"
+    $metadataParserFuncDef = "function ConvertFrom-WinUtilWimMetadataOutput {`n" + ${function:ConvertFrom-WinUtilWimMetadataOutput}.ToString() + "`n}"
+    $checkedDismFuncDef = "function Invoke-WinUtilCheckedImageDism {`n" + ${function:Invoke-WinUtilCheckedImageDism}.ToString() + "`n}"
+    $imageIndexFuncDef = "function Get-WinUtilImageIndex {`n" + ${function:Get-WinUtilImageIndex}.ToString() + "`n}"
+    $imageMetadataFuncDef = "function Read-WinUtilImageDetail {`n" + ${function:Read-WinUtilImageDetail}.ToString() + "`n}"
+    $esdExportFuncDef = "function Export-WinUtilEsdImageToWim {`n" + ${function:Export-WinUtilEsdImageToWim}.ToString() + "`n}"
     $runspace.SessionStateProxy.SetVariable("isoScriptFuncDef",   $isoScriptFuncDef)
     $runspace.SessionStateProxy.SetVariable("win11ISOLogFuncDef", $win11ISOLogFuncDef)
     $runspace.SessionStateProxy.SetVariable("inventoryItemFuncDef", $inventoryItemFuncDef)
     $runspace.SessionStateProxy.SetVariable("inventoryFuncDef", $inventoryFuncDef)
     $runspace.SessionStateProxy.SetVariable("transactionFuncDef", $transactionFuncDef)
+    $runspace.SessionStateProxy.SetVariable("imageDismFuncDef", $imageDismFuncDef)
+    $runspace.SessionStateProxy.SetVariable("metadataParserFuncDef", $metadataParserFuncDef)
+    $runspace.SessionStateProxy.SetVariable("checkedDismFuncDef", $checkedDismFuncDef)
+    $runspace.SessionStateProxy.SetVariable("imageIndexFuncDef", $imageIndexFuncDef)
+    $runspace.SessionStateProxy.SetVariable("imageMetadataFuncDef", $imageMetadataFuncDef)
+    $runspace.SessionStateProxy.SetVariable("esdExportFuncDef", $esdExportFuncDef)
 
     $script = [Management.Automation.PowerShell]::Create()
     $script.Runspace = $runspace
@@ -221,6 +233,12 @@ function Invoke-WinUtilISOModify {
         . ([scriptblock]::Create($inventoryItemFuncDef))
         . ([scriptblock]::Create($inventoryFuncDef))
         . ([scriptblock]::Create($transactionFuncDef))
+        . ([scriptblock]::Create($imageDismFuncDef))
+        . ([scriptblock]::Create($metadataParserFuncDef))
+        . ([scriptblock]::Create($checkedDismFuncDef))
+        . ([scriptblock]::Create($imageIndexFuncDef))
+        . ([scriptblock]::Create($imageMetadataFuncDef))
+        . ([scriptblock]::Create($esdExportFuncDef))
 
         function Log($msg) {
             $ts = (Get-Date).ToString("HH:mm:ss")
@@ -286,6 +304,19 @@ function Invoke-WinUtilISOModify {
             $localWim = Join-Path $isoContents "sources\$sourceImageFileName"
             if (-not (Test-Path $localWim)) {
                 throw "Copied ISO image file not found: sources\$sourceImageFileName"
+            }
+            if ([IO.Path]::GetExtension($localWim) -ieq '.esd') {
+                $exportedWim = Join-Path $isoContents 'sources\install.wim'
+                Log "Exporting selected ESD index $selectedWimIndex to a single-index serviceable WIM..."
+                $exportResult = Export-WinUtilEsdImageToWim `
+                    -SourceImagePath $localWim `
+                    -SourceImageIndex $selectedWimIndex `
+                    -DestinationImagePath $exportedWim
+                Remove-Item -LiteralPath $localWim -Force -ErrorAction Stop
+                $localWim = $exportResult.DestinationPath
+                $sourceImageFileName = 'install.wim'
+                $selectedWimIndex = $exportResult.DestinationIndex
+                Log "ESD export validated: $($exportResult.Name), edition $($exportResult.Edition), WIM index $selectedWimIndex."
             }
             $selectedEditionId = Get-WinUtilEditionIdFromName -EditionName $selectedEditionName
 

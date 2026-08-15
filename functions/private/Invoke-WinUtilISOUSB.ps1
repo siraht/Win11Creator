@@ -85,10 +85,13 @@ function Invoke-WinUtilISOWriteUSB {
     $runspace.SessionStateProxy.SetVariable("sync",        $sync)
     $runspace.SessionStateProxy.SetVariable("diskNum",     $diskNum)
     $runspace.SessionStateProxy.SetVariable("contentsDir", $contentsDir)
+    $fat32ImageFuncDef = "function ConvertTo-WinUtilFat32Image {`n" + ${function:ConvertTo-WinUtilFat32Image}.ToString() + "`n}"
+    $runspace.SessionStateProxy.SetVariable("fat32ImageFuncDef", $fat32ImageFuncDef)
 
     $script = [Management.Automation.PowerShell]::Create()
     $script.Runspace = $runspace
     $script.AddScript({
+        . ([scriptblock]::Create($fat32ImageFuncDef))
 
         function Log($msg) {
             $ts = (Get-Date).ToString("HH:mm:ss")
@@ -235,17 +238,14 @@ function Invoke-WinUtilISOWriteUSB {
 
             SetProgress "Copying Windows 11 files to USB..." 45
 
-            # Copy files; split install.wim if > 4 GB (FAT32 limit)
+            # Copy files; prepare install.wim as split SWM segments when FAT32 requires it.
             $installWim = Join-Path $contentsDir "sources\install.wim"
             if (Test-Path $installWim) {
-                $wimSizeMB = [math]::Round((Get-Item $installWim).Length / 1MB)
-                if ($wimSizeMB -gt 3800) {
-                    Log "install.wim is $wimSizeMB MB - splitting for FAT32 compatibility... This will take several minutes."
-                    Set-ItemProperty -LiteralPath $installWim -Name IsReadOnly -Value $false
-                    $splitDest = Join-Path $usbDrive "sources\install.swm"
-                    New-Item -ItemType Directory -Path (Split-Path $splitDest) -Force
-                    Split-WindowsImage -ImagePath $installWim -SplitImagePath $splitDest -FileSize 3800 -CheckIntegrity
-                    Log "install.wim split complete."
+                $fat32Image = ConvertTo-WinUtilFat32Image `
+                    -ImagePath $installWim `
+                    -DestinationDirectory (Join-Path $usbDrive 'sources')
+                if ($fat32Image.Mode -eq 'Split') {
+                    Log "install.wim split into $($fat32Image.Segments.Count) FAT32-compatible segments."
                     Log "Copying remaining files to USB..."
                     & robocopy $contentsDir $usbDrive /E /XF install.wim /NFL /NDL /NJH /NJS
                 } else {
