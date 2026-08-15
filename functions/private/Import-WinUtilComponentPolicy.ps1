@@ -14,13 +14,15 @@ function Test-WinUtilComponentPolicy {
         [switch]$ThrowOnError
     )
 
-    $errors = New-Object System.Collections.Generic.List[string]
+    $validationErrors = New-Object System.Collections.Generic.List[string]
     $allowedActions = @("keep", "remove", "disable", "manual", "protected")
     $allowedRisks = @("safe", "moderate", "high", "expert")
     $allowedTargetKinds = @("appx", "package", "capability", "feature", "registry", "service", "scheduled-task")
+    $allowedMatchTypes = @("exact", "wildcard", "version-insensitive")
+    $allowedConflictSeverities = @("warning", "likely-breakage", "forbidden-unless-expert")
 
     if ($Policy.schemaVersion -ne 1) {
-        $errors.Add("Unsupported component policy schemaVersion '$($Policy.schemaVersion)'.")
+        $validationErrors.Add("Unsupported component policy schemaVersion '$($Policy.schemaVersion)'.")
     }
 
     if ($Policy.documentType -eq "component-catalog") {
@@ -28,54 +30,88 @@ function Test-WinUtilComponentPolicy {
         foreach ($component in @($Policy.components)) {
             $componentId = [string]$component.id
             if ([string]::IsNullOrWhiteSpace($componentId)) {
-                $errors.Add("Catalog component is missing id.")
+                $validationErrors.Add("Catalog component is missing id.")
                 continue
             }
             if (-not $ids.Add($componentId)) {
-                $errors.Add("Catalog contains duplicate component id '$componentId'.")
+                $validationErrors.Add("Catalog contains duplicate component id '$componentId'.")
             }
 
             foreach ($field in @("name", "category", "description", "reason", "consequences")) {
                 if ([string]::IsNullOrWhiteSpace([string]$component.$field)) {
-                    $errors.Add("Component '$componentId' is missing $field.")
+                    $validationErrors.Add("Component '$componentId' is missing $field.")
                 }
             }
             if ($allowedActions -notcontains $component.defaultAction) {
-                $errors.Add("Component '$componentId' has invalid defaultAction '$($component.defaultAction)'.")
+                $validationErrors.Add("Component '$componentId' has invalid defaultAction '$($component.defaultAction)'.")
             }
             if ($allowedRisks -notcontains $component.risk) {
-                $errors.Add("Component '$componentId' has invalid risk '$($component.risk)'.")
+                $validationErrors.Add("Component '$componentId' has invalid risk '$($component.risk)'.")
             }
             if (@($component.targets).Count -eq 0) {
-                $errors.Add("Component '$componentId' has no targets.")
+                $validationErrors.Add("Component '$componentId' has no targets.")
             }
             foreach ($target in @($component.targets)) {
                 if ($allowedTargetKinds -notcontains $target.kind) {
-                    $errors.Add("Component '$componentId' has invalid target kind '$($target.kind)'.")
+                    $validationErrors.Add("Component '$componentId' has invalid target kind '$($target.kind)'.")
                 }
                 if ([string]::IsNullOrWhiteSpace([string]$target.match)) {
-                    $errors.Add("Component '$componentId' has a target without a match.")
+                    $validationErrors.Add("Component '$componentId' has a target without a match.")
+                }
+                if ($allowedMatchTypes -notcontains $target.matchType) {
+                    $validationErrors.Add("Component '$componentId' has invalid target matchType '$($target.matchType)'.")
+                } elseif ($target.matchType -eq "wildcard" -and [string]$target.match -notmatch '[*?]') {
+                    $validationErrors.Add("Component '$componentId' wildcard target '$($target.match)' must contain * or ?.")
+                } elseif ($target.matchType -ne "wildcard" -and [string]$target.match -match '[*?]') {
+                    $validationErrors.Add("Component '$componentId' $($target.matchType) target '$($target.match)' cannot contain * or ?.")
+                }
+            }
+            foreach ($conflict in @($component.conflicts)) {
+                if ($allowedActions -notcontains $conflict.action) {
+                    $validationErrors.Add("Component '$componentId' conflict has invalid action '$($conflict.action)'.")
+                }
+                if ($allowedActions -notcontains $conflict.withAction) {
+                    $validationErrors.Add("Component '$componentId' conflict has invalid withAction '$($conflict.withAction)'.")
+                }
+                if ($allowedConflictSeverities -notcontains $conflict.severity) {
+                    $validationErrors.Add("Component '$componentId' conflict has invalid severity '$($conflict.severity)'.")
+                }
+                if ([string]::IsNullOrWhiteSpace([string]$conflict.reason)) {
+                    $validationErrors.Add("Component '$componentId' conflict is missing reason.")
                 }
             }
             if ($component.exposed -eq $true) {
                 foreach ($field in @("description", "reason", "consequences")) {
                     if ([string]::IsNullOrWhiteSpace([string]$component.$field)) {
-                        $errors.Add("Exposed component '$componentId' is missing $field.")
+                        $validationErrors.Add("Exposed component '$componentId' is missing $field.")
                     }
                 }
                 if ($null -eq $component.reversible -or $component.reversible -isnot [bool]) {
-                    $errors.Add("Exposed component '$componentId' is missing boolean reversible metadata.")
+                    $validationErrors.Add("Exposed component '$componentId' is missing boolean reversible metadata.")
+                }
+            }
+        }
+        foreach ($component in @($Policy.components)) {
+            $componentId = [string]$component.id
+            foreach ($reference in @($component.requires) + @($component.protects)) {
+                if (-not $ids.Contains([string]$reference)) {
+                    $validationErrors.Add("Component '$componentId' references unknown dependency '$reference'.")
+                }
+            }
+            foreach ($conflict in @($component.conflicts)) {
+                if (-not $ids.Contains([string]$conflict.with)) {
+                    $validationErrors.Add("Component '$componentId' references unknown conflict component '$($conflict.with)'.")
                 }
             }
         }
     } elseif ($Policy.documentType -eq "component-profile") {
         foreach ($field in @("id", "name", "description")) {
             if ([string]::IsNullOrWhiteSpace([string]$Policy.$field)) {
-                $errors.Add("Component profile is missing $field.")
+                $validationErrors.Add("Component profile is missing $field.")
             }
         }
         if ($null -eq $Policy.actions) {
-            $errors.Add("Component profile is missing actions.")
+            $validationErrors.Add("Component profile is missing actions.")
         } else {
             $catalogIds = @()
             if ($Catalog) {
@@ -83,22 +119,22 @@ function Test-WinUtilComponentPolicy {
             }
             foreach ($actionProperty in @($Policy.actions.PSObject.Properties)) {
                 if ($allowedActions -notcontains $actionProperty.Value) {
-                    $errors.Add("Profile '$($Policy.id)' has invalid action '$($actionProperty.Value)' for '$($actionProperty.Name)'.")
+                    $validationErrors.Add("Profile '$($Policy.id)' has invalid action '$($actionProperty.Value)' for '$($actionProperty.Name)'.")
                 }
                 if ($Catalog -and $catalogIds -notcontains $actionProperty.Name) {
-                    $errors.Add("Profile '$($Policy.id)' references unknown component '$($actionProperty.Name)'.")
+                    $validationErrors.Add("Profile '$($Policy.id)' references unknown component '$($actionProperty.Name)'.")
                 }
             }
         }
     } else {
-        $errors.Add("Invalid component policy documentType '$($Policy.documentType)'.")
+        $validationErrors.Add("Invalid component policy documentType '$($Policy.documentType)'.")
     }
 
-    if ($errors.Count -gt 0 -and $ThrowOnError) {
-        throw ($errors -join "`n")
+    if ($validationErrors.Count -gt 0 -and $ThrowOnError) {
+        throw ($validationErrors -join "`n")
     }
 
-    return $errors.Count -eq 0
+    return $validationErrors.Count -eq 0
 }
 
 function Import-WinUtilComponentPolicy {

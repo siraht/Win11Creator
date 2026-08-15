@@ -18,6 +18,8 @@ Describe "Deep customization component policy" {
 
         $schema.'$defs'.action.enum | Should -Be @("keep", "remove", "disable", "manual", "protected")
         $schema.'$defs'.risk.enum | Should -Be @("safe", "moderate", "high", "expert")
+        $schema.'$defs'.matchType.enum | Should -Be @("exact", "wildcard", "version-insensitive")
+        $schema.'$defs'.conflictSeverity.enum | Should -Be @("warning", "likely-breakage", "forbidden-unless-expert")
         $script:catalog.schemaVersion | Should -Be 1
         @($script:defaultProfile, $script:leanDawProfile).Count | Should -Be 2
     }
@@ -37,7 +39,7 @@ Describe "Deep customization component policy" {
                         category = "test"
                         defaultAction = $action
                         risk = $risk
-                        targets = @([pscustomobject]@{ kind = "package"; match = "Test-*" })
+                        targets = @([pscustomobject]@{ kind = "package"; match = "Test-*"; matchType = "wildcard" })
                         protects = @()
                         conflicts = @()
                         requires = @()
@@ -111,7 +113,7 @@ Describe "Deep customization component policy" {
                 category = "test"
                 defaultAction = "remove"
                 risk = "moderate"
-                targets = @([pscustomobject]@{ kind = "appx"; match = "Invalid.Package" })
+                targets = @([pscustomobject]@{ kind = "appx"; match = "Invalid.Package"; matchType = "exact" })
                 protects = @()
                 conflicts = @()
                 requires = @()
@@ -124,5 +126,29 @@ Describe "Deep customization component policy" {
         }
 
         { Test-WinUtilComponentPolicy -Policy $invalid -ThrowOnError } | Should -Throw "*Exposed component 'invalid-entry'*"
+    }
+
+    It "PolicyContract_MalformedMatchSemantics_PlantedNegative" {
+        $invalid = $script:catalog | ConvertTo-Json -Depth 20 | ConvertFrom-Json
+        $invalid.components[0].targets[0].matchType = "wildcard"
+
+        { Test-WinUtilComponentPolicy -Policy $invalid -ThrowOnError } |
+            Should -Throw "*wildcard target*must contain * or ?*"
+    }
+
+    It "PolicyContract_UnknownDependencyReference_PlantedNegative" {
+        $invalid = $script:catalog | ConvertTo-Json -Depth 20 | ConvertFrom-Json
+        $invalid.components[0].requires = @("missing-runtime")
+
+        { Test-WinUtilComponentPolicy -Policy $invalid -ThrowOnError } |
+            Should -Throw "*references unknown dependency 'missing-runtime'*"
+    }
+
+    It "PolicyContract_UnknownConflictReference_PlantedNegative" {
+        $invalid = $script:catalog | ConvertTo-Json -Depth 20 | ConvertFrom-Json
+        $invalid.components[0].conflicts[0].with = "missing-shell"
+
+        { Test-WinUtilComponentPolicy -Policy $invalid -ThrowOnError } |
+            Should -Throw "*references unknown conflict component 'missing-shell'*"
     }
 }

@@ -25,7 +25,7 @@ Describe 'Offline image policy resolver' {
         $inventory = New-TestInventory @($known, $unknown)
         $policy = @([pscustomobject]@{
             Id = 'feedback'; Action = 'Remove'; Risk = 'Safe'; Reason = 'Not required.'
-            Targets = @([pscustomobject]@{ Kind = 'AppX'; Match = 'Microsoft.WindowsFeedbackHub'; MatchType = 'Exact' })
+            Targets = @([pscustomobject]@{ Kind = 'AppX'; Match = 'Microsoft.WindowsFeedbackHub'; MatchType = 'exact' })
         })
 
         $plan = Resolve-WinUtilOfflineImagePolicy -Inventory $inventory -Policy $policy
@@ -44,12 +44,12 @@ Describe 'Offline image policy resolver' {
             [pscustomobject]@{
                 Id = 'aix'; Action = 'Remove'; Risk = 'Moderate'; Reason = 'Remove AI payload.'
                 Targets = @([pscustomobject]@{
-                    Kind = 'Package'; Match = 'Microsoft-Windows-Client-AIX-Package~31bf3856ad364e35~amd64~~10.0.22000.1'; MatchType = 'VersionInsensitive'
+                    Kind = 'Package'; Match = 'Microsoft-Windows-Client-AIX-Package~31bf3856ad364e35~amd64~~10.0.22000.1'; MatchType = 'version-insensitive'
                 })
             },
             [pscustomobject]@{
                 Id = 'xbox'; Action = 'Remove'; Risk = 'Moderate'; Reason = 'Remove Xbox apps.'
-                Targets = @([pscustomobject]@{ Kind = 'AppX'; Match = 'Microsoft.XboxApp_*'; MatchType = 'Wildcard' })
+                Targets = @([pscustomobject]@{ Kind = 'AppX'; Match = 'Microsoft.XboxApp_*'; MatchType = 'wildcard' })
             }
         )
 
@@ -65,11 +65,11 @@ Describe 'Offline image policy resolver' {
         $policy = @(
             [pscustomobject]@{
                 Id = 'remove-features'; Action = 'Remove'; Risk = 'Moderate'; Reason = 'Broad removal.'
-                Targets = @([pscustomobject]@{ Kind = 'Feature'; Match = '*NFS*'; MatchType = 'Wildcard' })
+                Targets = @([pscustomobject]@{ Kind = 'Feature'; Match = '*NFS*'; MatchType = 'wildcard' })
             },
             [pscustomobject]@{
                 Id = 'protect-nfs'; Action = 'Protected'; Risk = 'High'; Reason = 'Required for development.'
-                Targets = @([pscustomobject]@{ Kind = 'Feature'; Match = 'ServicesForNFS-ClientOnly'; MatchType = 'Exact' })
+                Targets = @([pscustomobject]@{ Kind = 'Feature'; Match = 'ServicesForNFS-ClientOnly'; MatchType = 'exact' })
             }
         )
         $override = @([pscustomobject]@{ Identity = $nfs.Identity; Action = 'Remove'; Reason = 'Expert request.' })
@@ -96,7 +96,7 @@ Describe 'Offline image policy resolver' {
         )
         $policy = @([pscustomobject]@{
             Id = 'high-risk-aix'; Action = 'Remove'; Risk = 'High'; Reason = 'High-risk removal.'
-            Targets = @([pscustomobject]@{ Kind = 'Package'; Match = 'Microsoft-Windows-Client-AIX-*'; MatchType = 'Wildcard' })
+            Targets = @([pscustomobject]@{ Kind = 'Package'; Match = 'Microsoft-Windows-Client-AIX-*'; MatchType = 'wildcard' })
         })
 
         { Resolve-WinUtilOfflineImagePolicy -Inventory $inventory -Policy $policy } |

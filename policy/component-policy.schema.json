@@ -36,14 +36,33 @@
     "risk": {
       "enum": ["safe", "moderate", "high", "expert"]
     },
+    "matchType": {
+      "enum": ["exact", "wildcard", "version-insensitive"]
+    },
+    "conflictSeverity": {
+      "enum": ["warning", "likely-breakage", "forbidden-unless-expert"]
+    },
+    "conflict": {
+      "type": "object",
+      "required": ["action", "with", "withAction", "severity", "reason"],
+      "properties": {
+        "action": { "$ref": "#/$defs/action" },
+        "with": { "type": "string", "minLength": 1 },
+        "withAction": { "$ref": "#/$defs/action" },
+        "severity": { "$ref": "#/$defs/conflictSeverity" },
+        "reason": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
     "target": {
       "type": "object",
-      "required": ["kind", "match"],
+      "required": ["kind", "match", "matchType"],
       "properties": {
         "kind": {
           "enum": ["appx", "package", "capability", "feature", "registry", "service", "scheduled-task"]
         },
-        "match": { "type": "string", "minLength": 1 }
+        "match": { "type": "string", "minLength": 1 },
+        "matchType": { "$ref": "#/$defs/matchType" }
       },
       "additionalProperties": false
     },
@@ -61,7 +80,7 @@
         "risk": { "$ref": "#/$defs/risk" },
         "targets": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/target" } },
         "protects": { "type": "array", "items": { "type": "string" } },
-        "conflicts": { "type": "array", "items": { "type": "string" } },
+        "conflicts": { "type": "array", "items": { "$ref": "#/$defs/conflict" } },
         "requires": { "type": "array", "items": { "type": "string" } },
         "description": { "type": "string", "minLength": 1 },
         "reason": { "type": "string", "minLength": 1 },

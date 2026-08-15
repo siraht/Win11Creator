@@ -13,20 +13,20 @@ function Test-WinUtilInventoryTargetMatch {
     )
 
     if ([string]$Item.Kind -ne [string]$Target.Kind) { return $false }
-    $matchType = if ($Target.MatchType) { [string]$Target.MatchType } else { 'Exact' }
+    $matchType = ([string]$Target.MatchType).ToLowerInvariant()
     $candidateValues = @([string]$Item.Identity, [string]$Item.Name) | Select-Object -Unique
 
     switch ($matchType) {
-        'Exact' {
+        'exact' {
             return @($candidateValues | Where-Object { $_ -ieq [string]$Target.Match }).Count -gt 0
         }
-        'Wildcard' {
+        'wildcard' {
             if ([string]$Target.Match -notmatch '[*?]') {
                 throw "Wildcard target '$($Target.Match)' must contain * or ?."
             }
             return @($candidateValues | Where-Object { $_ -ilike [string]$Target.Match }).Count -gt 0
         }
-        'VersionInsensitive' {
+        'version-insensitive' {
             $expected = ConvertTo-WinUtilVersionInsensitiveIdentity -Identity ([string]$Target.Match)
             return @($candidateValues | Where-Object {
                 (ConvertTo-WinUtilVersionInsensitiveIdentity -Identity $_) -ieq $expected
@@ -71,11 +71,11 @@ function Resolve-WinUtilOfflineImagePolicy {
         }
 
         foreach ($target in @($rule.Targets)) {
-            $matches = @($Inventory.Items | Where-Object { Test-WinUtilInventoryTargetMatch -Item $_ -Target $target })
-            if ($matches.Count -gt 1 -and [string]$rule.Risk -in @('High', 'Expert')) {
-                throw "High-risk policy '$($rule.Id)' target '$($target.Match)' is ambiguous ($($matches.Count) matches)."
+            $targetMatches = @($Inventory.Items | Where-Object { Test-WinUtilInventoryTargetMatch -Item $_ -Target $target })
+            if ($targetMatches.Count -gt 1 -and [string]$rule.Risk -in @('High', 'Expert')) {
+                throw "High-risk policy '$($rule.Id)' target '$($target.Match)' is ambiguous ($($targetMatches.Count) matches)."
             }
-            foreach ($match in $matches) {
+            foreach ($match in $targetMatches) {
                 $matchKey = '{0}|{1}' -f [string]$match.Kind, [string]$match.Identity
                 $current = $decisions[$matchKey]
                 if ($current.Action -eq 'Protected') { continue }
