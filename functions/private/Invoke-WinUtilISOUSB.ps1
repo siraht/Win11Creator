@@ -85,13 +85,21 @@ function Invoke-WinUtilISOWriteUSB {
     $runspace.SessionStateProxy.SetVariable("sync",        $sync)
     $runspace.SessionStateProxy.SetVariable("diskNum",     $diskNum)
     $runspace.SessionStateProxy.SetVariable("contentsDir", $contentsDir)
+    $runspace.SessionStateProxy.SetVariable("manifestDirectory", (Join-Path ([string]$sync['Win11ISOWorkDir']) 'manifests'))
+    $runspace.SessionStateProxy.SetVariable("buildLogPath", (Join-Path ([string]$sync['Win11ISOWorkDir']) 'WinUtil_Win11ISO.log'))
     $fat32ImageFuncDef = "function ConvertTo-WinUtilFat32Image {`n" + ${function:ConvertTo-WinUtilFat32Image}.ToString() + "`n}"
+    $readManifestFuncDef = "function Read-WinUtilOfflineManifest {`n" + ${function:Read-WinUtilOfflineManifest}.ToString() + "`n}"
+    $publishArtifactFuncDef = "function Publish-WinUtilBuildArtifact {`n" + ${function:Publish-WinUtilBuildArtifact}.ToString() + "`n}"
     $runspace.SessionStateProxy.SetVariable("fat32ImageFuncDef", $fat32ImageFuncDef)
+    $runspace.SessionStateProxy.SetVariable("readManifestFuncDef", $readManifestFuncDef)
+    $runspace.SessionStateProxy.SetVariable("publishArtifactFuncDef", $publishArtifactFuncDef)
 
     $script = [Management.Automation.PowerShell]::Create()
     $script.Runspace = $runspace
     $script.AddScript({
         . ([scriptblock]::Create($fat32ImageFuncDef))
+        . ([scriptblock]::Create($readManifestFuncDef))
+        . ([scriptblock]::Create($publishArtifactFuncDef))
 
         function Log($msg) {
             $ts = (Get-Date).ToString("HH:mm:ss")
@@ -257,8 +265,9 @@ function Invoke-WinUtilISOWriteUSB {
 
             SetProgress "Finalising USB drive..." 90
             Log "Files copied to USB."
-            SetProgress "USB write complete" 100
-            Log "USB drive is ready for use."
+            $publication = Publish-WinUtilBuildArtifact -OutputPath $usbDrive -ManifestDirectory $manifestDirectory -BuildLogPath $buildLogPath
+            SetProgress "USB write complete and verified" 100
+            Log "USB drive is ready for use. Build evidence: $($publication.EvidenceDirectory)"
 
             $sync["WPFWin11ISOStatusLog"].Dispatcher.Invoke([action]{
                 [System.Windows.MessageBox]::Show(

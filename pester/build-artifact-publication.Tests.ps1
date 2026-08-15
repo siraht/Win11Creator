@@ -67,6 +67,18 @@ Describe 'Durable build artifact publication' {
         Test-Path -LiteralPath (Join-Path $script:manifestDirectory 'ResolvedPlan.json') | Should -BeTrue
     }
 
+    It 'hashes a USB output tree before publishing evidence inside it' {
+        $usbRoot = Join-Path $script:testRoot 'USB'
+        New-Item -Path (Join-Path $usbRoot 'sources') -ItemType Directory -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $usbRoot 'bootmgr') -Value 'boot manager'
+        Set-Content -LiteralPath (Join-Path $usbRoot 'sources/install.wim') -Value 'install image'
+
+        $result = Publish-WinUtilBuildArtifact -OutputPath $usbRoot -ManifestDirectory $script:manifestDirectory -BuildLogPath $script:logPath
+
+        $result.EvidenceDirectory | Should -Be (Join-Path $usbRoot 'WinUtil-build')
+        (Get-Content -LiteralPath $result.HashFile)[0] | Should -Match '^[A-F0-9]{64} \*USB-CONTENT$'
+    }
+
     It 'plants the negative that a missing required manifest cannot publish' {
         Remove-Item -LiteralPath (Join-Path $script:manifestDirectory 'ImageInventory.after.json')
 

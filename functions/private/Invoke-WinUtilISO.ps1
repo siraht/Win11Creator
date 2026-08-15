@@ -732,14 +732,22 @@ function Invoke-WinUtilISOExport {
     $runspace.SessionStateProxy.SetVariable("contentsDir", $contentsDir)
     $runspace.SessionStateProxy.SetVariable("outputISO",   $outputISO)
     $runspace.SessionStateProxy.SetVariable("oscdimg",     $oscdimg)
+    $runspace.SessionStateProxy.SetVariable("manifestDirectory", (Join-Path ([string]$sync['Win11ISOWorkDir']) 'manifests'))
+    $runspace.SessionStateProxy.SetVariable("buildLogPath", (Join-Path ([string]$sync['Win11ISOWorkDir']) 'WinUtil_Win11ISO.log'))
 
     $win11ISOLogFuncDef = "function Write-WinUtilISOLog {`n" + ${function:Write-WinUtilISOLog}.ToString() + "`n}"
+    $readManifestFuncDef = "function Read-WinUtilOfflineManifest {`n" + ${function:Read-WinUtilOfflineManifest}.ToString() + "`n}"
+    $publishArtifactFuncDef = "function Publish-WinUtilBuildArtifact {`n" + ${function:Publish-WinUtilBuildArtifact}.ToString() + "`n}"
     $runspace.SessionStateProxy.SetVariable("win11ISOLogFuncDef", $win11ISOLogFuncDef)
+    $runspace.SessionStateProxy.SetVariable("readManifestFuncDef", $readManifestFuncDef)
+    $runspace.SessionStateProxy.SetVariable("publishArtifactFuncDef", $publishArtifactFuncDef)
 
     $script = [Management.Automation.PowerShell]::Create()
     $script.Runspace = $runspace
     $script.AddScript({
         . ([scriptblock]::Create($win11ISOLogFuncDef))
+        . ([scriptblock]::Create($readManifestFuncDef))
+        . ([scriptblock]::Create($publishArtifactFuncDef))
 
         function SetProgress($label, $pct) {
             $sync["WPFWin11ISOStatusLog"].Dispatcher.Invoke([action]{
@@ -786,10 +794,12 @@ function Invoke-WinUtilISOExport {
             }
 
             if ($proc.ExitCode -eq 0) {
-                SetProgress "ISO exported" 100
-                Write-WinUtilISOLog "ISO exported successfully: $outputISO"
+                SetProgress "Publishing build evidence..." 95
+                $publication = Publish-WinUtilBuildArtifact -OutputPath $outputISO -ManifestDirectory $manifestDirectory -BuildLogPath $buildLogPath
+                SetProgress "ISO exported and verified" 100
+                Write-WinUtilISOLog "ISO exported with verified build evidence: $($publication.EvidenceDirectory)"
                 $sync["WPFWin11ISOStatusLog"].Dispatcher.Invoke([action]{
-                    [System.Windows.MessageBox]::Show("ISO exported successfully!`n`n$outputISO", "Export Complete", "OK", "Info")
+                    [System.Windows.MessageBox]::Show("ISO exported successfully!`n`n$outputISO`n`nBuild evidence: $($publication.EvidenceDirectory)", "Export Complete", "OK", "Info")
                 })
             } else {
                 Write-WinUtilISOLog "oscdimg exited with code $($proc.ExitCode)."
