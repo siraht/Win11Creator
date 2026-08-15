@@ -28,17 +28,20 @@ This compact record is the project owner's requested source for progress, decisi
 * Keep `winutil.ps1` generated-only, as required by upstream `AGENTS.md` and `SPEC.md`; change modular sources and compile for verification.
 * Treat `gpt-5.6-sol` with low reasoning as the available equivalent of the requested `5.6-sol-light` worker configuration.
 * Do not mark Windows servicing, WPF, ISO, USB, VM, DAW, or developer gates complete from Linux-only evidence.
+* The safety evaluator blocks `forbidden-unless-expert` conflicts, while warnings and likely-breakage remain visible but nonblocking. Expert mode changes permission, not evidence: conflicts remain in the result.
 
 **Lessons and open verification gaps**
 
 * The initial host is Linux and lacks Windows VM tooling. Portable PowerShell `7.6.5` and Pester `5.8.0` are now available for cross-platform compile/unit checks, but Windows-only acceptance still requires a Windows execution environment.
 * The untouched upstream suite is not cross-platform clean: the Linux baseline ran 549 tests with 513 passed, 34 failed, and 2 skipped. Failures were concentrated in Windows-only WPF, registry, service, ACL/path, and driver-injection assumptions; new changes must be compared against this baseline and also run on Windows before release.
+* Generic dependency evaluation can be verified cross-platform, but the accuracy of real Windows dependency declarations still requires catalog review and VM behavior checks.
 
 **Progress log**
 
 * `2026-08-15T19:55:49Z` — Initialized the local fork from upstream `main`; read `AGENTS.md`, `CLAUDE.md`, and `SPEC.md`; confirmed that the only pre-existing workspace artifact was this plan.
 * `2026-08-15` — Committed this implementation plan as fork revision `d849084e11a1c3acc8a9a888b660c97e50596108`; the worktree was clean immediately after the commit.
 * `2026-08-15` — Installed checksum-verified portable PowerShell `7.6.5` under `/data/tmp`, installed Pester `5.8.0`, and ran the untouched upstream suite: 549 discovered, 513 passed, 34 failed, 2 skipped, 0 not run.
+* `2026-08-15` — Integrated safety evaluator commits `7f3380c`, `45d4471`, and `dc03ce6`; focused Pester result: 4 passed, 0 failed; `Compile.ps1` completed successfully.
 
 ---
 
@@ -733,24 +736,27 @@ The validation layer should answer:
 
   * **Proof required:** dependency catalog.
 
-* [ ] **Implement transitive protection.**
+* [x] **Implement transitive protection.**
 
   * **Proof required:** test where protecting WinGet also protects required runtime.
+  * **Proof:** `Test-WinUtilComponentSafety` in commit `7f3380c`; planted-negative Pester coverage in `45d4471`/`dc03ce6`; focused result 4 passed, 0 failed on PowerShell `7.6.5` and Pester `5.8.0`.
 
-* [ ] **Detect explicit user conflicts.**
+* [x] **Detect explicit user conflicts.**
 
   * Example:
 
     * remove Windows App Runtime;
     * keep App Installer.
   * **Proof required:** resolver rejects or warns.
+  * **Proof:** commit `7f3380c` returns blocking conflict evidence for remove Windows App Runtime + keep App Installer; focused tests passed in `dc03ce6`.
 
-* [ ] **Implement severity levels for conflicts.**
+* [x] **Implement severity levels for conflicts.**
 
   * warning;
   * likely breakage;
   * forbidden unless Expert.
   * **Proof required:** unit tests.
+  * **Proof:** commit `7f3380c` implements `warning`, `likely-breakage`, and `forbidden-unless-expert`; `45d4471` verifies all severities and Expert override behavior.
 
 ---
 
