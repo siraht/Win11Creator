@@ -177,7 +177,8 @@ function Get-WinUtilComponentPolicyAction {
         [psobject]$Catalog,
 
         [Parameter(Mandatory)]
-        [psobject]$Profile
+        [Alias("Profile")]
+        [psobject]$ComponentProfile
     )
 
     $component = @($Catalog.components | Where-Object { $_.id -eq $ComponentId }) | Select-Object -First 1
@@ -191,7 +192,7 @@ function Get-WinUtilComponentPolicyAction {
         }
     }
 
-    $profileAction = $Profile.actions.PSObject.Properties[$ComponentId]
+    $profileAction = $ComponentProfile.actions.PSObject.Properties[$ComponentId]
     $action = if ($profileAction) { [string]$profileAction.Value } else { [string]$component.defaultAction }
     return [pscustomobject]@{
         ComponentId   = $ComponentId

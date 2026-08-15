@@ -6,13 +6,13 @@ function Resolve-WinUtilComponentPolicyPlan {
     param (
         [Parameter(Mandatory)]$Inventory,
         [Parameter(Mandatory)][psobject]$Catalog,
-        [Parameter(Mandatory)][psobject]$Profile,
+        [Parameter(Mandatory)][Alias('Profile')][psobject]$ComponentProfile,
         [System.Collections.IDictionary]$ActionOverrides = @{},
         [switch]$ExpertMode
     )
 
     Test-WinUtilComponentPolicy -Policy $Catalog -ThrowOnError | Out-Null
-    Test-WinUtilComponentPolicy -Policy $Profile -Catalog $Catalog -ThrowOnError | Out-Null
+    Test-WinUtilComponentPolicy -Policy $ComponentProfile -Catalog $Catalog -ThrowOnError | Out-Null
 
     $selectedActions = @{}
     $resolverRules = [System.Collections.Generic.List[object]]::new()
@@ -21,7 +21,7 @@ function Resolve-WinUtilComponentPolicyPlan {
 
     foreach ($component in @($Catalog.components)) {
         $componentId = [string]$component.id
-        $profileProperty = $Profile.actions.PSObject.Properties[$componentId]
+        $profileProperty = $ComponentProfile.actions.PSObject.Properties[$componentId]
         $profileAction = if ($profileProperty) { [string]$profileProperty.Value } else { [string]$component.defaultAction }
         $selectedAction = $profileAction
 
@@ -35,7 +35,7 @@ function Resolve-WinUtilComponentPolicyPlan {
                     ComponentId = $componentId
                     RelatedComponentId = $componentId
                     Severity = 'forbidden-unless-expert'
-                    Reason = "Profile '$($Profile.id)' protects component '$componentId'; override requested '$selectedAction'."
+                    Reason = "Profile '$($ComponentProfile.id)' protects component '$componentId'; override requested '$selectedAction'."
                     IsBlocking = -not $ExpertMode.IsPresent
                 })
             }
@@ -75,7 +75,7 @@ function Resolve-WinUtilComponentPolicyPlan {
     }
 
     [pscustomobject]@{
-        ProfileId = [string]$Profile.id
+        ProfileId = [string]$ComponentProfile.id
         Rules = @($resolverRules)
         Safety = $safety
         ResolvedPlan = Resolve-WinUtilOfflineImagePolicy -Inventory $Inventory -Policy @($resolverRules)
