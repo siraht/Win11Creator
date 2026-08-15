@@ -88,6 +88,7 @@ function New-WinUtilAdvancedPackageSelectorModel {
     param (
         [Parameter(Mandatory)][psobject]$ImageInventory,
         [psobject]$ResolvedPlan,
+        [AllowEmptyCollection()][object[]]$ManualOverride = @(),
         [switch]$ExpertMode
     )
 
@@ -113,6 +114,11 @@ function New-WinUtilAdvancedPackageSelectorModel {
             [string]$decision.Reason
         }
         $isProtected = $recommendation -eq 'Protected'
+        $initialSelected = -not $isUnknown -and -not $isProtected -and $recommendation -in @('Remove', 'Disable')
+        $rowOverride = @($ManualOverride | Where-Object {
+            [string]$_.Kind -eq [string]$item.Kind -and [string]$_.Identity -eq [string]$item.Identity
+        }) | Select-Object -First 1
+        $isSelected = if ($rowOverride) { [string]$rowOverride.Action -in @('Remove', 'Disable') } else { $initialSelected }
 
         [pscustomobject]@{
             Kind           = [string]$item.Kind
@@ -124,9 +130,42 @@ function New-WinUtilAdvancedPackageSelectorModel {
             IsUnknown      = $isUnknown
             IsProtected    = $isProtected
             CanSelect      = -not $isUnknown -and (-not $isProtected -or $ExpertMode.IsPresent)
-            IsSelected     = $false
+            IsSelected     = $isSelected
+            InitialSelected = $initialSelected
         }
     }
+}
+
+function Set-WinUtilAdvancedPackageOverride {
+    <#
+    .SYNOPSIS
+        Converts a selector change into an explicit resolver manual override.
+    #>
+    param (
+        [Parameter(Mandatory)][psobject]$Row,
+        [Parameter(Mandatory)][bool]$Selected,
+        [switch]$ExpertMode
+    )
+
+    $selection = Set-WinUtilAdvancedPackageSelection -Row $Row -Selected $Selected -ExpertMode:$ExpertMode
+    if (-not $selection.IsAllowed) {
+        return [pscustomobject]@{ IsAllowed = $false; Warning = $selection.Warning; Override = $null }
+    }
+
+    $override = $null
+    if ($Selected -ne [bool]$Row.InitialSelected) {
+        $action = if ($Selected) {
+            if ($Row.IsProtected -or $Row.Recommendation -notin @('Remove', 'Disable')) { 'Remove' } else { [string]$Row.Recommendation }
+        } else { 'Keep' }
+        $override = [pscustomobject]@{
+            Kind = [string]$Row.Kind
+            Identity = [string]$Row.Identity
+            Action = $action
+            Reason = 'Advanced Package Selector user override.'
+        }
+    }
+
+    [pscustomobject]@{ IsAllowed = $true; Warning = $selection.Warning; Override = $override }
 }
 
 function Set-WinUtilAdvancedPackageSelection {
@@ -156,20 +195,67 @@ function Set-WinUtilAdvancedPackageSelection {
     return [pscustomobject]@{ IsAllowed = $true; Warning = $warning }
 }
 
+function New-WinUtilComponentPolicyHandoff {
+    <#
+    .SYNOPSIS
+        Reports whether the UI has all artifacts required by the servicing handoff.
+    #>
+    param (
+        [Parameter(Mandatory)][string]$SelectedProfileId,
+        [psobject]$ImageInventory,
+        [psobject]$ResolvedPlan,
+        [Parameter()][AllowEmptyCollection()][object[]]$RegistryActions
+    )
+
+    $hasInventory = $null -ne $ImageInventory
+    $hasResolvedPlan = $null -ne $ResolvedPlan
+    $hasRegistryActions = $null -ne $RegistryActions
+    $isReady = $hasInventory -and $hasResolvedPlan -and $hasRegistryActions
+    $status = if (-not $hasInventory) {
+        'Preview only: inventory, resolved plan, and registry actions have not been staged.'
+    } elseif (-not $hasResolvedPlan) {
+        'Inventory loaded; the selected profile has not been resolved for servicing.'
+    } elseif (-not $hasRegistryActions) {
+        'Resolved component plan staged; registry actions have not been staged.'
+    } else {
+        'Ready: resolved component plan and registry actions are staged for servicing.'
+    }
+
+    [pscustomobject]@{
+        SelectedProfileId = $SelectedProfileId
+        HasInventory = $hasInventory
+        HasResolvedPlan = $hasResolvedPlan
+        HasRegistryActions = $hasRegistryActions
+        IsReady = $isReady
+        Status = $status
+    }
+}
+
 function Update-WinUtilComponentPolicyUI {
     param ([Parameter(Mandatory)][string]$SelectedProfileId)
 
     $model = New-WinUtilComponentPolicyPresentation `
-        -Catalog $sync.componentPolicyCatalog `
-        -Profiles @($sync.componentPolicyProfiles) `
+        -Catalog $sync.configs.componentPolicy.catalog `
+        -Profiles @($sync.configs.componentPolicy.profiles.PSObject.Properties.Value) `
         -SelectedProfileId $SelectedProfileId
     $sync.ComponentPolicyPresentation = $model
+    $sync['Win11ISOSelectedProfileId'] = $SelectedProfileId
+    $sync['Win11ISOResolvedPlan'] = $null
+    $sync['Win11ISORegistryActions'] = $null
+    $sync['Win11ISOAdvancedPackageRows'] = @()
+    $handoff = New-WinUtilComponentPolicyHandoff `
+        -SelectedProfileId $SelectedProfileId `
+        -ImageInventory $sync['Win11ISOImageInventory']
+    $sync['Win11ISOPolicyHandoff'] = $handoff
 
     Invoke-WPFUIThread {
         $sync.WPFWin11ISOSummaryRemove.Text = [string]$model.Summary.RemoveCount
         $sync.WPFWin11ISOSummaryDisable.Text = [string]$model.Summary.DisableCount
         $sync.WPFWin11ISOSummaryProtected.Text = [string]$model.Summary.ProtectedCount
         $sync.WPFWin11ISOSummaryRisk.Text = ([string]$model.Summary.Risk).ToUpperInvariant()
+        $sync.WPFWin11ISOPolicyHandoffStatus.Text = $handoff.Status
+        $sync.WPFWin11ISOPolicyHandoffStatus.Foreground = 'OrangeRed'
+        $sync.WPFWin11ISOAdvancedPackageItems.ItemsSource = @()
 
         $groupControlNames = @{
             'Apps' = 'WPFWin11ISOAppsItems'
@@ -187,25 +273,39 @@ function Update-WinUtilComponentPolicyUI {
 function Set-WinUtilAdvancedPackageSelectorUI {
     param (
         [Parameter(Mandatory)][psobject]$ImageInventory,
-        [psobject]$ResolvedPlan
+        [psobject]$ResolvedPlan,
+        [Parameter()][AllowEmptyCollection()][object[]]$RegistryActions
     )
 
-    $sync.Win11ISOImageInventory = $ImageInventory
-    $sync.Win11ISOResolvedPlan = $ResolvedPlan
+    $sync['Win11ISOImageInventory'] = $ImageInventory
+    $sync['Win11ISOResolvedPlan'] = $ResolvedPlan
+    $sync['Win11ISORegistryActions'] = $RegistryActions
     $expertMode = $sync.WPFWin11ISOExpertMode.IsChecked -eq $true
-    $rows = @(New-WinUtilAdvancedPackageSelectorModel -ImageInventory $ImageInventory -ResolvedPlan $ResolvedPlan -ExpertMode:$expertMode)
-    $sync.Win11ISOAdvancedPackageRows = $rows
+    $rows = @(New-WinUtilAdvancedPackageSelectorModel `
+        -ImageInventory $ImageInventory `
+        -ResolvedPlan $ResolvedPlan `
+        -ManualOverride @($sync['Win11ISOManualOverrides']) `
+        -ExpertMode:$expertMode)
+    $sync['Win11ISOAdvancedPackageRows'] = $rows
+    $handoff = New-WinUtilComponentPolicyHandoff `
+        -SelectedProfileId ([string]$sync['Win11ISOSelectedProfileId']) `
+        -ImageInventory $ImageInventory `
+        -ResolvedPlan $ResolvedPlan `
+        -RegistryActions $RegistryActions
+    $sync['Win11ISOPolicyHandoff'] = $handoff
 
     Invoke-WPFUIThread {
         $sync.WPFWin11ISOAdvancedPackageItems.ItemsSource = $rows
         $sync.WPFWin11ISOExpertWarning.Visibility = if ($expertMode) { 'Visible' } else { 'Collapsed' }
+        $sync.WPFWin11ISOPolicyHandoffStatus.Text = $handoff.Status
+        $sync.WPFWin11ISOPolicyHandoffStatus.Foreground = if ($handoff.IsReady) { 'Green' } else { 'OrangeRed' }
     }
 }
 
 function Initialize-WinUtilComponentPolicyUI {
     $model = New-WinUtilComponentPolicyPresentation `
-        -Catalog $sync.componentPolicyCatalog `
-        -Profiles @($sync.componentPolicyProfiles)
+        -Catalog $sync.configs.componentPolicy.catalog `
+        -Profiles @($sync.configs.componentPolicy.profiles.PSObject.Properties.Value)
     $sync.ComponentPolicyPresentation = $model
 
     Invoke-WPFUIThread {

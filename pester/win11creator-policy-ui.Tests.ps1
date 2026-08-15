@@ -85,6 +85,7 @@ Describe 'Win11 Creator advanced package selector safeguards' {
         $feedback.Kind | Should -Be 'AppX'
         $feedback.Recommendation | Should -Be 'Remove'
         $feedback.Rationale | Should -Be 'Not required.'
+        $feedback.IsSelected | Should -BeTrue
     }
 
     It 'plants the negative invariant that unknown inventory is never auto-selected' {
@@ -121,6 +122,40 @@ Describe 'Win11 Creator advanced package selector safeguards' {
         $result.Warning | Should -Match 'dependencies and Windows servicing'
         $protected.IsSelected | Should -BeTrue
     }
+
+    It 'turns selector changes into actionable overrides without accepting unknown rows' {
+        $rows = @(New-WinUtilAdvancedPackageSelectorModel -ImageInventory $script:inventory -ResolvedPlan $script:plan)
+        $feedback = $rows | Where-Object Identity -eq 'Microsoft.WindowsFeedbackHub'
+        $unknown = $rows | Where-Object Identity -eq 'Contoso.Future.Package'
+
+        $keepFeedback = Set-WinUtilAdvancedPackageOverride -Row $feedback -Selected $false
+        $rejectUnknown = Set-WinUtilAdvancedPackageOverride -Row $unknown -Selected $true -ExpertMode
+
+        $keepFeedback.IsAllowed | Should -BeTrue
+        $keepFeedback.Override.Action | Should -Be 'Keep'
+        $keepFeedback.Override.Identity | Should -Be 'Microsoft.WindowsFeedbackHub'
+        $rejectUnknown.IsAllowed | Should -BeFalse
+        $rejectUnknown.Override | Should -BeNullOrEmpty
+    }
+
+    It 'keeps the servicing handoff staged until inventory, plan, and registry actions are supplied' {
+        $preview = New-WinUtilComponentPolicyHandoff -SelectedProfileId 'lean-daw'
+        $missingRegistry = New-WinUtilComponentPolicyHandoff `
+            -SelectedProfileId 'lean-daw' `
+            -ImageInventory $script:inventory `
+            -ResolvedPlan $script:plan
+        $ready = New-WinUtilComponentPolicyHandoff `
+            -SelectedProfileId 'lean-daw' `
+            -ImageInventory $script:inventory `
+            -ResolvedPlan $script:plan `
+            -RegistryActions @()
+
+        $preview.IsReady | Should -BeFalse
+        $preview.Status | Should -Match 'Preview only'
+        $missingRegistry.IsReady | Should -BeFalse
+        $missingRegistry.Status | Should -Match 'registry actions have not been staged'
+        $ready.IsReady | Should -BeTrue
+    }
 }
 
 Describe 'Win11 Creator policy XAML bindings' {
@@ -136,7 +171,7 @@ Describe 'Win11 Creator policy XAML bindings' {
             'WPFWin11ISOSummaryProtected', 'WPFWin11ISOSummaryRisk', 'WPFWin11ISOAppsItems',
             'WPFWin11ISOWindowsComponentsItems', 'WPFWin11ISOFeaturesItems', 'WPFWin11ISOPrivacyItems',
             'WPFWin11ISODeveloperItems', 'WPFWin11ISOAdvancedPackageItems', 'WPFWin11ISOExpertMode',
-            'WPFWin11ISOExpertWarning'
+            'WPFWin11ISOExpertWarning', 'WPFWin11ISOPolicyHandoffStatus'
         )) {
             @($script:xaml.SelectNodes("//*[@Name='$name']")).Count | Should -Be 1
         }
@@ -147,5 +182,26 @@ Describe 'Win11 Creator policy XAML bindings' {
         $script:source | Should -Match 'Text="\{Binding Recommendation\}"'
         $script:source | Should -Match 'Text="\{Binding Rationale\}"'
         $script:source | Should -Match 'IsChecked="\{Binding IsSelected\}" IsEnabled="\{Binding CanSelect\}"'
+    }
+
+    It 'marshals policy and selector control updates through the WPF dispatcher helper' {
+        $functionSource = Get-Content -LiteralPath (Join-Path $script:repoRoot 'functions/private/Initialize-WinUtilComponentPolicyUI.ps1') -Raw
+
+        foreach ($functionName in @('Update-WinUtilComponentPolicyUI', 'Set-WinUtilAdvancedPackageSelectorUI', 'Initialize-WinUtilComponentPolicyUI')) {
+            $pattern = '(?s)function\s+' + [regex]::Escape($functionName) + '\s*\{.*?Invoke-WPFUIThread\s*\{'
+            $functionSource | Should -Match $pattern
+        }
+    }
+
+    It 'consumes the canonical embedded component policy bundle and wires selector overrides' {
+        $functionSource = Get-Content -LiteralPath (Join-Path $script:repoRoot 'functions/private/Initialize-WinUtilComponentPolicyUI.ps1') -Raw
+        $mainSource = Get-Content -LiteralPath (Join-Path $script:repoRoot 'scripts/main.ps1') -Raw
+
+        $functionSource | Should -Match '\$sync\.configs\.componentPolicy\.catalog'
+        $functionSource | Should -Match '\$sync\.configs\.componentPolicy\.profiles\.PSObject\.Properties\.Value'
+        $mainSource | Should -Match 'Set-WinUtilAdvancedPackageOverride'
+        $mainSource | Should -Match '\$sync\[''Win11ISOManualOverrides''\]'
+        $mainSource | Should -Match '\$sync\[''Win11ISOResolvedPlan''\]\s*=\s*\$null'
+        $mainSource | Should -Match '\$sync\[''Win11ISORegistryActions''\]\s*=\s*\$null'
     }
 }

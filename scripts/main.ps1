@@ -145,14 +145,59 @@ $sync.WPFWin11ISOProfileComboBox.Add_SelectionChanged({
 $refreshAdvancedPackageSelector = {
     if ($sync.Win11ISOImageInventory) {
         Set-WinUtilAdvancedPackageSelectorUI `
-            -ImageInventory $sync.Win11ISOImageInventory `
-            -ResolvedPlan $sync.Win11ISOResolvedPlan
+            -ImageInventory $sync['Win11ISOImageInventory'] `
+            -ResolvedPlan $sync['Win11ISOResolvedPlan'] `
+            -RegistryActions $sync['Win11ISORegistryActions']
     } else {
         $sync.WPFWin11ISOExpertWarning.Visibility = if ($sync.WPFWin11ISOExpertMode.IsChecked) { 'Visible' } else { 'Collapsed' }
     }
 }
 $sync.WPFWin11ISOExpertMode.Add_Checked($refreshAdvancedPackageSelector)
 $sync.WPFWin11ISOExpertMode.Add_Unchecked($refreshAdvancedPackageSelector)
+
+$advancedPackageSelectionHandler = [System.Windows.RoutedEventHandler]{
+    param($uiSender, $uiEventArgs)
+    $null = $uiSender
+    $checkBox = $uiEventArgs.OriginalSource
+    if ($checkBox -isnot [System.Windows.Controls.CheckBox] -or $null -eq $checkBox.DataContext) { return }
+
+    $row = $checkBox.DataContext
+    $result = Set-WinUtilAdvancedPackageOverride `
+        -Row $row `
+        -Selected ($checkBox.IsChecked -eq $true) `
+        -ExpertMode:($sync.WPFWin11ISOExpertMode.IsChecked -eq $true)
+    if (-not $result.IsAllowed) {
+        $checkBox.IsChecked = $false
+        $sync.WPFWin11ISOExpertWarning.Text = $result.Warning
+        $sync.WPFWin11ISOExpertWarning.Visibility = 'Visible'
+        return
+    }
+
+    $overrideByKey = @{}
+    foreach ($item in @($sync['Win11ISOManualOverrides'])) {
+        $overrideByKey['{0}|{1}' -f [string]$item.Kind, [string]$item.Identity] = $item
+    }
+    $key = '{0}|{1}' -f [string]$row.Kind, [string]$row.Identity
+    if ($result.Override) { $overrideByKey[$key] = $result.Override } else { $overrideByKey.Remove($key) }
+    $sync['Win11ISOManualOverrides'] = @($overrideByKey.Values)
+
+    $sync['Win11ISOResolvedPlan'] = $null
+    $sync['Win11ISORegistryActions'] = $null
+    $handoff = New-WinUtilComponentPolicyHandoff `
+        -SelectedProfileId ([string]$sync['Win11ISOSelectedProfileId']) `
+        -ImageInventory $sync['Win11ISOImageInventory']
+    $sync['Win11ISOPolicyHandoff'] = $handoff
+    $sync.WPFWin11ISOPolicyHandoffStatus.Text = $handoff.Status
+    $sync.WPFWin11ISOPolicyHandoffStatus.Foreground = 'OrangeRed'
+}
+$sync.WPFWin11ISOAdvancedPackageItems.AddHandler(
+    [System.Windows.Controls.Primitives.ToggleButton]::CheckedEvent,
+    $advancedPackageSelectionHandler
+)
+$sync.WPFWin11ISOAdvancedPackageItems.AddHandler(
+    [System.Windows.Controls.Primitives.ToggleButton]::UncheckedEvent,
+    $advancedPackageSelectionHandler
+)
 
 $sync.ChocoRadioButton.Add_Checked({
     $sync.preferences.packagemanager = "Choco"

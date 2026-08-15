@@ -1821,6 +1821,9 @@
                                                    Foreground="{DynamicResource MainForegroundColor}"/>
                                         <ComboBox Name="WPFWin11ISOProfileComboBox" Margin="0,6,0,10" MinWidth="220"
                                                   HorizontalAlignment="Left"/>
+                                        <TextBlock Name="WPFWin11ISOPolicyHandoffStatus" Margin="0,0,0,10" TextWrapping="Wrap"
+                                                   Foreground="OrangeRed"
+                                                   Text="Preview only: inventory, resolved plan, and registry actions have not been staged."/>
 
                                         <UniformGrid Columns="4" Margin="0,0,0,10">
                                             <StackPanel><TextBlock Text="Remove" FontWeight="Bold" Foreground="{DynamicResource MainForegroundColor}"/><TextBlock Name="WPFWin11ISOSummaryRemove" Text="0" Foreground="{DynamicResource MainForegroundColor}"/></StackPanel>
