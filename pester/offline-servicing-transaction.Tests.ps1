@@ -48,6 +48,7 @@ Describe 'Offline servicing transaction boundary' {
         $script:afterItems[1] = [pscustomobject]@{ Kind = 'Feature'; Name = 'DisableFeature'; Identity = 'DisableFeature'; State = 'Disabled' }
         $script:inventoryCall = 0
         $script:dismCalls = [System.Collections.Generic.List[string]]::new()
+        $script:regCalls = [System.Collections.Generic.List[string]]::new()
 
         Mock Get-WindowsImage { @() } -ParameterFilter { $Mounted }
         Mock Mount-WindowsImage { }
@@ -67,10 +68,16 @@ Describe 'Offline servicing transaction boundary' {
             $script:dismCalls.Add(($Arguments -join '|'))
             $global:LASTEXITCODE = 0
         }
+        function reg.exe {
+            param ([Parameter(ValueFromRemainingArguments)][string[]]$Arguments)
+            $script:regCalls.Add(($Arguments -join '|'))
+            $global:LASTEXITCODE = 0
+        }
     }
 
     AfterEach {
         Remove-Item Function:\dism.exe -ErrorAction SilentlyContinue
+        Remove-Item Function:\reg.exe -ErrorAction SilentlyContinue
         Remove-Item -LiteralPath $script:testRoot -Recurse -Force -ErrorAction SilentlyContinue
     }
 
@@ -131,6 +138,20 @@ Describe 'Offline servicing transaction boundary' {
         (Get-Content (Join-Path $script:manifestPath 'ImageInventory.diff.json') -Raw | ConvertFrom-Json).Changes.Count | Should -Be 4
     }
 
+    It 'loads only an explicitly requested offline registry hive and unloads it' {
+        $plan = [pscustomobject]@{ SchemaVersion = '1.0'; Decisions = @() }
+        $registryAction = @([pscustomobject]@{
+            Hive = 'SOFTWARE'; Key = 'Policies\WinUtil'; Action = 'Set'; Name = 'Enabled'; Type = 'REG_DWORD'; Value = 1
+        })
+
+        Invoke-WinUtilOfflineServicingTransaction -InstallImagePath $script:wimPath -ImageIndex 6 -ResolvedPlan $plan -MountPath $script:mountPath -ManifestDirectory $script:manifestPath -RegistryAction $registryAction | Out-Null
+
+        $script:regCalls.Count | Should -Be 3
+        $script:regCalls[0] | Should -Match '^load\|HKLM\\WinUtilOfflineSoftware\|.*SOFTWARE$'
+        $script:regCalls[1] | Should -Match '^add\|HKLM\\WinUtilOfflineSoftware\\Policies\\WinUtil\|/v\|Enabled\|/t\|REG_DWORD\|/d\|1\|/f$'
+        $script:regCalls[2] | Should -Be 'unload|HKLM\WinUtilOfflineSoftware'
+    }
+
     It 'discards the mount and never commits when a servicing action fails' {
         Mock Remove-WindowsPackage { throw 'injected package failure' }
         $plan = [pscustomobject]@{ SchemaVersion = '1.0'; Decisions = @((New-TransactionDecision Package 'Remove.Package~test' Remove)) }
@@ -141,6 +162,39 @@ Describe 'Offline servicing transaction boundary' {
         Should -Invoke Mount-WindowsImage -Times 1 -Exactly
         Should -Invoke Dismount-WindowsImage -Times 1 -Exactly -ParameterFilter { $Path -eq $script:mountPath -and $Discard }
         Should -Invoke Dismount-WindowsImage -Times 0 -Exactly -ParameterFilter { $Save }
+    }
+
+    It 'finds and discards a partial mount when mounting throws' {
+        $script:mountAttempted = $false
+        Mock Get-WindowsImage {
+            if ($script:mountAttempted) { return @([pscustomobject]@{ Path = $script:mountPath; MountStatus = 'Invalid' }) }
+            return @()
+        } -ParameterFilter { $Mounted }
+        Mock Mount-WindowsImage {
+            $script:mountAttempted = $true
+            throw 'injected mount failure'
+        }
+        $plan = [pscustomobject]@{ SchemaVersion = '1.0'; Decisions = @() }
+
+        { Invoke-WinUtilOfflineServicingTransaction -InstallImagePath $script:wimPath -ImageIndex 6 -ResolvedPlan $plan -MountPath $script:mountPath -ManifestDirectory $script:manifestPath } |
+            Should -Throw '*injected mount failure*'
+
+        Should -Invoke Get-WindowsImage -Times 2 -Exactly -ParameterFilter { $Mounted }
+        Should -Invoke Dismount-WindowsImage -Times 1 -Exactly -ParameterFilter { $Path -eq $script:mountPath -and $Discard }
+        Should -Invoke Dismount-WindowsImage -Times 0 -Exactly -ParameterFilter { $Save }
+    }
+
+    It 'removes pending success manifests and discards when commit fails' {
+        Mock Dismount-WindowsImage { throw 'injected commit failure' } -ParameterFilter { $Save }
+        $plan = [pscustomobject]@{ SchemaVersion = '1.0'; Decisions = @() }
+
+        { Invoke-WinUtilOfflineServicingTransaction -InstallImagePath $script:wimPath -ImageIndex 6 -ResolvedPlan $plan -MountPath $script:mountPath -ManifestDirectory $script:manifestPath } |
+            Should -Throw '*injected commit failure*'
+
+        Should -Invoke Dismount-WindowsImage -Times 1 -Exactly -ParameterFilter { $Save }
+        Should -Invoke Dismount-WindowsImage -Times 1 -Exactly -ParameterFilter { $Discard }
+        @(Get-ChildItem -LiteralPath $script:manifestPath -File -ErrorAction SilentlyContinue).Count | Should -Be 0
+        @(Get-ChildItem -LiteralPath $script:manifestPath -Directory -ErrorAction SilentlyContinue).Count | Should -Be 0
     }
 
     It 'discards a stale registered mount before using the mount path' {
@@ -158,6 +212,18 @@ Describe 'Offline servicing transaction boundary' {
 
         { Invoke-WinUtilOfflineServicingTransaction -InstallImagePath $script:wimPath -ImageIndex 6 -ResolvedPlan $plan -MountPath $script:mountPath -ManifestDirectory $script:manifestPath } |
             Should -Throw "*kind 'SystemApp' cannot be safely serviced offline*"
+        Should -Invoke Mount-WindowsImage -Times 0 -Exactly
+    }
+
+    It 'blocks a resolved plan whose safety evaluation is not allowed' {
+        $plan = [pscustomobject]@{
+            SchemaVersion = '1.0'
+            Safety = [pscustomobject]@{ IsAllowed = $false; Conflicts = @('blocked') }
+            Decisions = @()
+        }
+
+        { Invoke-WinUtilOfflineServicingTransaction -InstallImagePath $script:wimPath -ImageIndex 6 -ResolvedPlan $plan -MountPath $script:mountPath -ManifestDirectory $script:manifestPath } |
+            Should -Throw '*safety evaluation is blocking*'
         Should -Invoke Mount-WindowsImage -Times 0 -Exactly
     }
 

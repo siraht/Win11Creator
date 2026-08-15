@@ -470,6 +470,8 @@ Describe "XAML and sync wiring" {
             "Win11ISOWorkDir",
             "Win11ISOContentsDir",
             "Win11ISOUSBDisks",
+            "Win11ISOResolvedPlan",
+            "Win11ISORegistryActions",
             "AppCategoryChips",
             "SelectedAppCategories",
             "AppCategoryAutoExpanded"

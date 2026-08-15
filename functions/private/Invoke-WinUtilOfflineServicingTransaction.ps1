@@ -101,6 +101,9 @@ function Invoke-WinUtilOfflineServicingTransaction {
     if ([IO.Path]::GetExtension($InstallImagePath) -ne '.wim') { throw 'Offline servicing requires install.wim; install.esd cannot be serviced in place.' }
     if (-not (Test-Path -LiteralPath $InstallImagePath)) { throw "install.wim was not found: $InstallImagePath" }
     if ([string]$ResolvedPlan.SchemaVersion -ne '1.0' -or $null -eq $ResolvedPlan.Decisions) { throw 'ResolvedPlan must use schema version 1.0 and contain Decisions.' }
+    if ($ResolvedPlan.PSObject.Properties['Safety'] -and $ResolvedPlan.Safety.IsAllowed -ne $true) {
+        throw 'ResolvedPlan safety evaluation is blocking offline servicing.'
+    }
     foreach ($decision in @($ResolvedPlan.Decisions | Where-Object Action -in @('Remove', 'Disable'))) {
         if ([string]$decision.Kind -notin @('AppX', 'Capability', 'Feature', 'Package')) {
             throw "Resolved action '$($decision.Action)' for kind '$($decision.Kind)' cannot be safely serviced offline."
@@ -112,6 +115,8 @@ function Invoke-WinUtilOfflineServicingTransaction {
     if ($DriverDirectory -and -not (Test-Path -LiteralPath $DriverDirectory)) { throw "Driver directory was not found: $DriverDirectory" }
 
     New-Item -Path $ManifestDirectory -ItemType Directory -Force | Out-Null
+    $pendingManifestDirectory = Join-Path $ManifestDirectory ".pending-$(([guid]::NewGuid()).ToString('N'))"
+    New-Item -Path $pendingManifestDirectory -ItemType Directory -Force | Out-Null
     $mounted = $false
     $committed = $false
     try {
@@ -128,7 +133,7 @@ function Invoke-WinUtilOfflineServicingTransaction {
         $mounted = $true
 
         $before = Get-WinUtilOfflineImageInventory -MountedImagePath $MountPath -SourceImagePath $InstallImagePath -ImageIndex $ImageIndex -ImageName $ImageName -SystemApp $SystemAppDiscovery
-        Write-WinUtilOfflineJson -InputObject $before -Path (Join-Path $ManifestDirectory 'ImageInventory.before.json')
+        Write-WinUtilOfflineJson -InputObject $before -Path (Join-Path $pendingManifestDirectory 'ImageInventory.before.json')
 
         foreach ($decision in @($ResolvedPlan.Decisions)) {
             if ([string]$decision.Action -in @('Keep', 'Protected', 'Manual')) { continue }
@@ -151,19 +156,33 @@ function Invoke-WinUtilOfflineServicingTransaction {
 
         $after = Get-WinUtilOfflineImageInventory -MountedImagePath $MountPath -SourceImagePath $InstallImagePath -ImageIndex $ImageIndex -ImageName $ImageName -SystemApp $SystemAppDiscovery
         $diff = Get-WinUtilOfflineInventoryDiff -Before $before -After $after
-        Write-WinUtilOfflineJson -InputObject $after -Path (Join-Path $ManifestDirectory 'ImageInventory.after.json')
-        Write-WinUtilOfflineJson -InputObject $diff -Path (Join-Path $ManifestDirectory 'ImageInventory.diff.json')
+        Write-WinUtilOfflineJson -InputObject $after -Path (Join-Path $pendingManifestDirectory 'ImageInventory.after.json')
+        Write-WinUtilOfflineJson -InputObject $diff -Path (Join-Path $pendingManifestDirectory 'ImageInventory.diff.json')
 
         & $Log 'Committing the offline servicing transaction once.'
         Dismount-WindowsImage -Path $MountPath -Save -ErrorAction Stop | Out-Null
         $mounted = $false
         $committed = $true
+        foreach ($manifestName in 'ImageInventory.before.json', 'ImageInventory.after.json', 'ImageInventory.diff.json') {
+            Move-Item -LiteralPath (Join-Path $pendingManifestDirectory $manifestName) -Destination (Join-Path $ManifestDirectory $manifestName) -Force
+        }
         return [pscustomobject][ordered]@{ Before = $before; After = $after; Diff = $diff; ManifestDirectory = $ManifestDirectory }
     } finally {
-        if ($mounted -and -not $committed) {
+        $requiresDiscard = $mounted
+        if (-not $committed -and -not $requiresDiscard) {
+            try {
+                $requiresDiscard = @(
+                    Get-WindowsImage -Mounted -ErrorAction Stop | Where-Object { $_.Path -eq $MountPath }
+                ).Count -gt 0
+            } catch {
+                & $Log "Warning: could not inspect the failed offline mount at '$MountPath': $_"
+            }
+        }
+        if ($requiresDiscard -and -not $committed) {
             try { Dismount-WindowsImage -Path $MountPath -Discard -ErrorAction Stop | Out-Null }
             catch { & $Log "Warning: failed to discard offline image mount at '$MountPath': $_" }
         }
+        Remove-Item -LiteralPath $pendingManifestDirectory -Recurse -Force -ErrorAction SilentlyContinue
         if (Test-Path -LiteralPath $MountPath) { Remove-Item -LiteralPath $MountPath -Recurse -Force -ErrorAction SilentlyContinue }
     }
 }
