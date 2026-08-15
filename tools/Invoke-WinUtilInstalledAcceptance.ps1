@@ -108,10 +108,11 @@ function Invoke-WinUtilInstalledAcceptance {
         }
     }
     function Test-Command {
-        param ([string]$Id, [string]$Area, [bool]$Required, [string]$FilePath, [string[]]$Arguments)
+        param ([string]$Id, [string]$Area, [bool]$Required, [string]$FilePath, [string[]]$Arguments, [string]$EvidencePattern)
         try {
             $probe = & $ProbeProvider.Command $FilePath $Arguments
-            Add-AcceptanceResult $Id $Area $Required $(if ($probe.Success) { 'Pass' } else { 'Fail' }) ([string]$probe.Evidence)
+            $evidenceMatches = -not $EvidencePattern -or [string]$probe.Evidence -match $EvidencePattern
+            Add-AcceptanceResult $Id $Area $Required $(if ($probe.Success -and $evidenceMatches) { 'Pass' } else { 'Fail' }) ([string]$probe.Evidence)
         } catch {
             Add-AcceptanceResult $Id $Area $Required 'Fail' $_.Exception.Message
         }
@@ -135,7 +136,7 @@ function Invoke-WinUtilInstalledAcceptance {
         Add-AcceptanceResult 'servicing.dism-scanhealth' 'Servicing' $false 'NotRun' 'Release-depth probe.'
         Add-AcceptanceResult 'servicing.component-cleanup' 'Servicing' $false 'NotRun' 'Release-depth probe.'
     }
-    Test-Command 'servicing.winre' 'Servicing' ($Depth -eq 'Release') 'reagentc.exe' @('/info')
+    Test-Command 'servicing.winre' 'Servicing' ($Depth -eq 'Release') 'reagentc.exe' @('/info') 'Windows RE status:\s+Enabled'
     foreach ($serviceName in @('wuauserv', 'BITS', 'UsoSvc', 'WaaSMedicSvc')) {
         Test-ServiceAvailability "update.service.$($serviceName.ToLowerInvariant())" 'WindowsUpdate' $true $serviceName $true
     }

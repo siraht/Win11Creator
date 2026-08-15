@@ -11,7 +11,8 @@ BeforeAll {
                 param ($FilePath, $ArgumentList)
                 $identity = "$FilePath $($ArgumentList -join ' ')"
                 $commandFails = $FailCommand -and $identity -match $FailCommand
-                [pscustomobject]@{ Success = -not $commandFails; Evidence = "command=$identity"; ExitCode = $(if ($commandFails) { 1 } else { 0 }) }
+                $evidence = if ($FilePath -eq 'reagentc.exe') { 'Windows RE status: Enabled' } else { "command=$identity" }
+                [pscustomobject]@{ Success = -not $commandFails; Evidence = $evidence; ExitCode = $(if ($commandFails) { 1 } else { 0 }) }
             }.GetNewClosure()
             Registry = {
                 param ($Path, $Name)
@@ -98,6 +99,18 @@ Describe 'Installed acceptance harness' {
             $probe.Status | Should -Be 'NotRun'
             $probe.Required | Should -BeTrue
         }
+    }
+
+    It 'InstalledAcceptance_DisabledWinRe_PlantedNegative' {
+        $provider = New-AcceptanceProbeProvider -Mode LeanDaw
+        $provider.Command = {
+            param ($FilePath, $ArgumentList)
+            [pscustomobject]@{ Success = $true; Evidence = $(if ($FilePath -eq 'reagentc.exe') { 'Windows RE status: Disabled' } else { "command=$FilePath $($ArgumentList -join ' ')" }); ExitCode = 0 }
+        }
+        $result = Invoke-WinUtilInstalledAcceptance -ExpectedState LeanDaw -Depth Release -OutputPath (Join-Path $TestDrive 'disabled-winre.json') -ProbeProvider $provider
+
+        ($result.Document.Results | Where-Object Id -eq 'servicing.winre').Status | Should -Be 'Fail'
+        $result.ExitCode | Should -Be 1
     }
 
     It 'InstalledAcceptance_ReleaseAcceptsSuppliedDawEvidenceHooks' {
