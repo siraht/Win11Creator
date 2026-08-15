@@ -42,7 +42,27 @@ function Get-WinUtilWindowsBuildProvider {
             } while ($true)
         }
         DismountIso = { param($path) Dismount-DiskImage -ImagePath $path -ErrorAction Stop | Out-Null }
-        GetImageMetadata = { param($path) @(Get-WindowsImage -ImagePath $path -ErrorAction Stop) }
+        GetImageMetadata = {
+            param($path)
+
+            $basicImages = @(Get-WindowsImage -ImagePath $path -ErrorAction Stop)
+            if ($basicImages.Count -eq 0) { throw 'The install image did not report any image indexes.' }
+            $seenIndexes = [System.Collections.Generic.HashSet[int]]::new()
+            foreach ($basicImage in $basicImages) {
+                $rawIndex = [string]$basicImage.ImageIndex
+                $index = 0
+                if ([string]::IsNullOrWhiteSpace($rawIndex) -or -not [int]::TryParse($rawIndex, [ref]$index) -or $index -lt 1) {
+                    throw "The install image reported an invalid image index '$rawIndex'."
+                }
+                if (-not $seenIndexes.Add($index)) { throw "The install image reported duplicate image index $index." }
+
+                $details = @(Get-WindowsImage -ImagePath $path -Index $index -ErrorAction Stop)
+                if ($details.Count -ne 1 -or [int]$details[0].ImageIndex -ne $index) {
+                    throw "Image index $index did not return one matching detailed metadata record."
+                }
+                $details[0]
+            }
+        }
         CopyMedia = { param($source, $destination) Invoke-WinUtilRobocopy -Source $source -Destination $destination | Out-Null }
         ExportEsd = {
             param($source, $index, $destination)

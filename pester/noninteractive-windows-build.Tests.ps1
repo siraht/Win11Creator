@@ -1,6 +1,7 @@
 BeforeAll {
     $script:repoRoot = Split-Path -Parent $PSScriptRoot
     . (Join-Path $script:repoRoot 'tools/Invoke-WinUtilWindowsBuild.ps1')
+    function Get-WindowsImage { param($ImagePath, $Index, $ErrorAction) }
 
     function New-NonInteractiveBuildFixture {
         param ([string]$Format = 'WIM', [int]$OscdimgExitCode = 0, [switch]$EmptyOutput, [int]$Build = 26200)
@@ -73,6 +74,59 @@ BeforeAll {
             }
         }
         [pscustomobject]@{ Root = $root; SourceIso = $sourceIso; OutputIso = $outputIso; Work = $work; Oscdimg = $oscdimg; Provider = $provider; State = $state; Session = $session }
+    }
+}
+
+Describe 'Production Windows image metadata lookup' {
+    It 'expands live basic index records into exact detailed records' {
+        Mock Get-WindowsImage {
+            @(
+                [pscustomobject]@{ ImageIndex = 1; ImageName = 'Windows 11 Enterprise Evaluation' }
+                [pscustomobject]@{ ImageIndex = 2; ImageName = 'Windows 11 Enterprise N Evaluation' }
+            )
+        } -ParameterFilter { $null -eq $Index }
+        Mock Get-WindowsImage {
+            [pscustomobject]@{
+                ImageIndex = $Index; ImageName = $(if ($Index -eq 1) { 'Windows 11 Enterprise Evaluation' } else { 'Windows 11 Enterprise N Evaluation' })
+                Architecture = 9; Version = '10.0.26200.6584'
+            }
+        } -ParameterFilter { $null -ne $Index }
+
+        $metadata = @(& (Get-WinUtilWindowsBuildProvider).GetImageMetadata 'D:\sources\install.wim')
+
+        $metadata | Should -HaveCount 2
+        @($metadata.Architecture | Select-Object -Unique) | Should -Be @(9)
+        @($metadata.Version | Select-Object -Unique) | Should -Be @('10.0.26200.6584')
+        Should -Invoke Get-WindowsImage -Times 1 -Exactly -ParameterFilter { $ImagePath -eq 'D:\sources\install.wim' -and $null -eq $Index }
+        Should -Invoke Get-WindowsImage -Times 1 -Exactly -ParameterFilter { $ImagePath -eq 'D:\sources\install.wim' -and $Index -eq 1 }
+        Should -Invoke Get-WindowsImage -Times 1 -Exactly -ParameterFilter { $ImagePath -eq 'D:\sources\install.wim' -and $Index -eq 2 }
+    }
+
+    It 'fails closed on malformed basic index enumeration: <Case>' -ForEach @(
+        @{ Case = 'blank'; Basic = @([pscustomobject]@{ ImageIndex = '' }); Expected = '*invalid image index*' }
+        @{ Case = 'invalid'; Basic = @([pscustomobject]@{ ImageIndex = 'not-an-index' }); Expected = '*invalid image index*' }
+        @{ Case = 'duplicate'; Basic = @([pscustomobject]@{ ImageIndex = 1 }, [pscustomobject]@{ ImageIndex = 1 }); Expected = '*duplicate image index 1*' }
+    ) {
+        Mock Get-WindowsImage { $Basic } -ParameterFilter { $null -eq $Index }
+        Mock Get-WindowsImage { [pscustomobject]@{ ImageIndex = $Index; Architecture = 9; Version = '10.0.26200.6584' } } `
+            -ParameterFilter { $null -ne $Index }
+
+        { & (Get-WinUtilWindowsBuildProvider).GetImageMetadata 'D:\sources\install.wim' } | Should -Throw $Expected
+    }
+
+    It 'fails closed when an exact detail lookup is missing or mismatched' -ForEach @(
+        @{ Case = 'missing'; DetailIndex = $null }
+        @{ Case = 'mismatched'; DetailIndex = 2 }
+    ) {
+        Mock Get-WindowsImage { [pscustomobject]@{ ImageIndex = 1; ImageName = 'Windows 11 Enterprise Evaluation' } } `
+            -ParameterFilter { $null -eq $Index }
+        Mock Get-WindowsImage {
+            if ($null -eq $DetailIndex) { return @() }
+            [pscustomobject]@{ ImageIndex = $DetailIndex; Architecture = 9; Version = '10.0.26200.6584' }
+        } -ParameterFilter { $null -ne $Index }
+
+        { & (Get-WinUtilWindowsBuildProvider).GetImageMetadata 'D:\sources\install.wim' } |
+            Should -Throw '*did not return one matching detailed metadata record*'
     }
 }
 
