@@ -211,7 +211,7 @@ function Invoke-WinUtilISOScript {
                 if ([string]::IsNullOrWhiteSpace($ManifestDirectory)) {
                     $ManifestDirectory = Join-Path $ContentRoot 'WinUtil-Manifests'
                 }
-                Invoke-WinUtilOfflineServicingTransaction -InstallImagePath $InstallImagePath -ImageIndex $InstallImageIndex -ResolvedPlan $ResolvedPlan -MountPath $mountDir -ManifestDirectory $ManifestDirectory -DriverDirectory $driverExportRoot -RegistryAction $RegistryAction -Session $OfflineServicingSession -Log $Logger | Out-Null
+                Invoke-WinUtilOfflineServicingTransaction -InstallImagePath $InstallImagePath -ImageIndex $InstallImageIndex -ResolvedPlan $ResolvedPlan -MountPath $mountDir -ManifestDirectory $ManifestDirectory -DriverDirectory $driverExportRoot -RegistryAction $RegistryAction -SecurityOperation @($ActionBundle.SecurityOperations) -Session $OfflineServicingSession -Log $Logger | Out-Null
             } else {
                 New-Item -Path $mountDir -ItemType Directory -Force | Out-Null
                 & $Logger "Mounting install.wim index $InstallImageIndex once for driver injection..."
@@ -673,6 +673,6 @@ $appxList
             $ManifestDirectory = Join-Path $ISOContentsDir 'WinUtil-Manifests'
         }
         $mountDir = Join-Path (Split-Path -Path $ISOContentsDir -Parent) 'wim_mount'
-        Invoke-WinUtilOfflineServicingTransaction -InstallImagePath $InstallImagePath -ImageIndex $InstallImageIndex -ResolvedPlan $ResolvedPlan -MountPath $mountDir -ManifestDirectory $ManifestDirectory -RegistryAction $RegistryAction -Session $OfflineServicingSession -Log $Log | Out-Null
+        Invoke-WinUtilOfflineServicingTransaction -InstallImagePath $InstallImagePath -ImageIndex $InstallImageIndex -ResolvedPlan $ResolvedPlan -MountPath $mountDir -ManifestDirectory $ManifestDirectory -RegistryAction $RegistryAction -SecurityOperation @($ActionBundle.SecurityOperations) -Session $OfflineServicingSession -Log $Log | Out-Null
     }
 }
