@@ -16,7 +16,7 @@ BeforeAll {
             }.GetNewClosure()
             Registry = {
                 param ($Path, $Name)
-                $leanValue = if ($Name -eq 'DisableWindowsConsumerFeatures') { 1 } else { 0 }
+                $leanValue = if ($Name -in @('DisableWindowsConsumerFeatures', 'DisableSearchBoxSuggestions')) { 1 } else { 0 }
                 [pscustomobject]@{ Exists = $lean; Value = $leanValue; Evidence = "$Path::$Name=$leanValue" }
             }.GetNewClosure()
             Appx = {
@@ -30,6 +30,9 @@ BeforeAll {
                 [pscustomobject]@{ Present = -not ($lean -and $declaredRemoval); StartType = 'Manual'; Evidence = "service=$Name start=Manual" }
             }.GetNewClosure()
             Feature = { param ($Name) [pscustomobject]@{ Present = $true; Evidence = "feature=$Name" } }
+            Package = { param ($Pattern) [pscustomobject]@{ Present = -not $lean; Evidence = "package=$Pattern" } }.GetNewClosure()
+            SystemApp = { param ($Pattern) [pscustomobject]@{ Present = -not $lean; Evidence = "systemapp=$Pattern" } }.GetNewClosure()
+            Task = { param ($TaskPath) [pscustomobject]@{ Present = $true; Enabled = -not $lean; Evidence = "task=$TaskPath enabled=$(-not $lean)" } }.GetNewClosure()
             File = {
                 param ($Path)
                 $declaredRemoval = $Path -match 'OneDriveSetup\.exe$'
@@ -51,7 +54,7 @@ Describe 'Installed acceptance harness' {
         Test-Path -LiteralPath ([IO.Path]::ChangeExtension($output, '.log')) | Should -BeTrue
         $document = Get-Content -LiteralPath $output -Raw | ConvertFrom-Json
         $document.SchemaVersion | Should -Be '1.0'
-        $document.HarnessVersion | Should -Be '1.0.0'
+        $document.HarnessVersion | Should -Be '1.1.0'
         $document.Results.Id | Should -Contain 'servicing.dism-checkhealth'
         $document.Results.Id | Should -Contain 'developer.directml'
         ($document.Results | Where-Object Id -eq 'servicing.dism-scanhealth').Status | Should -Be 'NotRun'
@@ -116,7 +119,7 @@ Describe 'Installed acceptance harness' {
     It 'InstalledAcceptance_ReleaseAcceptsSuppliedDawEvidenceHooks' {
         $result = Invoke-WinUtilInstalledAcceptance -ExpectedState LeanDaw -Depth Release -OutputPath (Join-Path $TestDrive 'release-ready.json') `
             -AbletonPath 'C:\ProgramData\Ableton\Live.exe' -Vst3Path @('C:\Program Files\Common Files\VST3\Vendor.vst3') `
-            -LatencyMonReportPath 'C:\Evidence\latencymon.txt' -SmokeCommand 'exit 0' -ProbeProvider (New-AcceptanceProbeProvider -Mode LeanDaw)
+            -LatencyMonReportPath 'C:\Evidence\latencymon.txt' -SmokeCommand 'exit 0' -PostLoginSmokeCommand 'exit 0' -ProbeProvider (New-AcceptanceProbeProvider -Mode LeanDaw)
 
         $result.ExitCode | Should -Be 0
         ($result.Document.Results | Where-Object Area -eq 'DAW').Status | Should -Not -Contain 'NotRun'
@@ -127,5 +130,25 @@ Describe 'Installed acceptance harness' {
         $provider.Remove('Registry')
         { Invoke-WinUtilInstalledAcceptance -OutputPath (Join-Path $TestDrive 'bad.json') -ProbeProvider $provider } |
             Should -Throw "*boundary 'Registry' must be a scriptblock*"
+    }
+
+    It 'InstalledAcceptance_RemovedProtectedFeaturePayload_PlantedNegative' {
+        $provider = New-AcceptanceProbeProvider -Mode LeanDaw
+        $provider.Feature = { param ($Name) [pscustomobject]@{ Present = $Name -ne 'ServicesForNFS-ClientOnly'; State = 'Disabled with Payload Removed'; Evidence = "feature=$Name payload removed" } }
+        $result = Invoke-WinUtilInstalledAcceptance -ExpectedState LeanDaw -Depth Quick -OutputPath (Join-Path $TestDrive 'removed-feature.json') -ProbeProvider $provider
+
+        $result.ExitCode | Should -Be 1
+        ($result.Document.Results | Where-Object Id -eq 'protected.feature.servicesfornfs-clientonly').Status | Should -Be 'Fail'
+    }
+
+    It 'InstalledAcceptance_UnexpectedLeanPackageAndTask_PlantedNegative' {
+        $provider = New-AcceptanceProbeProvider -Mode LeanDaw
+        $provider.Package = { param ($Pattern) [pscustomobject]@{ Present = $Pattern -eq 'Microsoft-Windows-Client-CoreAI-*'; Evidence = "package=$Pattern" } }
+        $provider.Task = { param ($TaskPath) [pscustomobject]@{ Present = $true; Enabled = $TaskPath -match 'Consolidator$'; Evidence = "task=$TaskPath" } }
+        $result = Invoke-WinUtilInstalledAcceptance -ExpectedState LeanDaw -Depth Quick -OutputPath (Join-Path $TestDrive 'lean-targets.json') -ProbeProvider $provider
+
+        $result.ExitCode | Should -Be 1
+        ($result.Document.Results | Where-Object Id -eq 'removal.coreai-package').Status | Should -Be 'Fail'
+        ($result.Document.Results | Where-Object Id -eq 'removal.task.consolidator').Status | Should -Be 'Fail'
     }
 }

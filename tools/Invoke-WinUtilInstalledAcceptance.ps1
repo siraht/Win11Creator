@@ -7,6 +7,7 @@ param (
     [string[]]$Vst3Path,
     [string]$LatencyMonReportPath,
     [string]$SmokeCommand,
+    [string]$PostLoginSmokeCommand,
     [hashtable]$ProbeProvider,
     [switch]$PassThru
 )
@@ -50,7 +51,26 @@ function Get-WinUtilInstalledProbeProvider {
         Feature = {
             param ([string]$Name)
             $result = & dism.exe /Online /English /Get-FeatureInfo "/FeatureName:$Name" 2>&1 | Out-String
-            [pscustomobject]@{ Present = $LASTEXITCODE -eq 0 -and $result -match 'State\s*:'; Evidence = $result.Trim() }
+            $state = if ($result -match 'State\s*:\s*([^\r\n]+)') { $Matches[1].Trim() } else { $null }
+            [pscustomobject]@{ Present = $LASTEXITCODE -eq 0 -and $state -and $state -notmatch 'Removed'; State = $state; Evidence = $result.Trim() }
+        }
+        Package = {
+            param ([string]$Pattern)
+            $packages = @(Get-WindowsPackage -Online -ErrorAction SilentlyContinue | Where-Object PackageName -Like $Pattern)
+            [pscustomobject]@{ Present = $packages.Count -gt 0; Evidence = ($packages.PackageName -join '; ') }
+        }
+        SystemApp = {
+            param ([string]$Pattern)
+            $apps = @(Get-ChildItem -Path "$env:SystemRoot\SystemApps" -Directory -Filter $Pattern -ErrorAction SilentlyContinue)
+            [pscustomobject]@{ Present = $apps.Count -gt 0; Evidence = ($apps.FullName -join '; ') }
+        }
+        Task = {
+            param ([string]$TaskPath)
+            $separator = $TaskPath.LastIndexOf('\')
+            $path = $TaskPath.Substring(0, $separator + 1)
+            $name = $TaskPath.Substring($separator + 1)
+            $task = Get-ScheduledTask -TaskPath $path -TaskName $name -ErrorAction SilentlyContinue
+            [pscustomobject]@{ Present = $null -ne $task; Enabled = $null -ne $task -and [string]$task.State -ne 'Disabled'; Evidence = "$TaskPath state=$($task.State)" }
         }
         File = {
             param ([string]$Path)
@@ -82,11 +102,12 @@ function Invoke-WinUtilInstalledAcceptance {
         [string[]]$Vst3Path,
         [string]$LatencyMonReportPath,
         [string]$SmokeCommand,
+        [string]$PostLoginSmokeCommand,
         [hashtable]$ProbeProvider
     )
 
     if (-not $ProbeProvider) { $ProbeProvider = Get-WinUtilInstalledProbeProvider }
-    foreach ($boundary in @('Command', 'Registry', 'Appx', 'Service', 'Feature', 'File', 'Registration')) {
+    foreach ($boundary in @('Command', 'Registry', 'Appx', 'Service', 'Feature', 'Package', 'SystemApp', 'Task', 'File', 'Registration')) {
         if (-not $ProbeProvider.ContainsKey($boundary) -or $ProbeProvider[$boundary] -isnot [scriptblock]) {
             throw "ProbeProvider boundary '$boundary' must be a scriptblock."
         }
@@ -149,6 +170,11 @@ function Invoke-WinUtilInstalledAcceptance {
     Test-Command 'core.winget' 'CoreWindows' $true 'winget.exe' @('--info')
     Test-Presence 'core.store' 'CoreWindows' $true 'Appx' @('Microsoft.WindowsStore') $true
     Test-Presence 'core.appinstaller' 'CoreWindows' $true 'Appx' @('Microsoft.DesktopAppInstaller') $true
+    if ($PostLoginSmokeCommand) {
+        Test-Command 'core.postlogin-smoke' 'CoreWindows' $true 'powershell.exe' @('-NoProfile', '-NonInteractive', '-Command', $PostLoginSmokeCommand)
+    } else {
+        Add-AcceptanceResult 'core.postlogin-smoke' 'CoreWindows' ($Depth -eq 'Release') 'NotRun' 'Post-login smoke hook not supplied.'
+    }
 
     $lean = $ExpectedState -eq 'LeanDaw'
     $removalAppx = [ordered]@{
@@ -159,6 +185,22 @@ function Invoke-WinUtilInstalledAcceptance {
     }
     foreach ($entry in $removalAppx.GetEnumerator()) {
         Test-Presence $entry.Key 'DeclaredState' $true 'Appx' @($entry.Value) (-not $lean)
+    }
+    foreach ($entry in ([ordered]@{
+        'removal.search-package' = 'Microsoft-Windows-Search-*'
+        'removal.defender-package' = 'Windows-Defender-*'
+        'removal.defender-component-package' = 'Microsoft-Windows-Windows-Defender-*'
+        'removal.coreai-package' = 'Microsoft-Windows-Client-CoreAI-*'
+        'removal.aix-package' = 'Microsoft-Windows-Client-AIX-*'
+    }).GetEnumerator()) {
+        Test-Presence $entry.Key 'DeclaredState' $true 'Package' @($entry.Value) (-not $lean)
+    }
+    foreach ($entry in ([ordered]@{
+        'removal.search-systemapp' = '*Search*'
+        'removal.coreai-systemapp' = '*CoreAI*'
+        'removal.aix-systemapp' = '*AIX*'
+    }).GetEnumerator()) {
+        Test-Presence $entry.Key 'DeclaredState' $true 'SystemApp' @($entry.Value) (-not $lean)
     }
     foreach ($entry in @(
         @{ Id = 'removal.search'; Name = 'WSearch' }, @{ Id = 'removal.defender'; Name = 'WinDefend' },
@@ -171,6 +213,7 @@ function Invoke-WinUtilInstalledAcceptance {
         @{ Id = 'removal.uac'; Path = 'Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System'; Name = 'EnableLUA'; LeanValue = 0 },
         @{ Id = 'removal.gamedvr'; Path = 'Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\GameDVR'; Name = 'AllowGameDVR'; LeanValue = 0 },
         @{ Id = 'removal.consumer-content'; Path = 'Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\CloudContent'; Name = 'DisableWindowsConsumerFeatures'; LeanValue = 1 }
+        @{ Id = 'removal.bing-policy'; Path = 'Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\Explorer'; Name = 'DisableSearchBoxSuggestions'; LeanValue = 1 }
     )
     foreach ($entry in $registryStates) {
         try {
@@ -180,6 +223,17 @@ function Invoke-WinUtilInstalledAcceptance {
         } catch { Add-AcceptanceResult $entry.Id 'DeclaredState' $true 'Fail' $_.Exception.Message }
     }
     Test-Presence 'removal.onedrive' 'DeclaredState' $true 'File' @("$env:SystemRoot\SysWOW64\OneDriveSetup.exe") (-not $lean)
+    foreach ($taskPath in @(
+        '\Microsoft\Windows\Customer Experience Improvement Program\Consolidator',
+        '\Microsoft\Windows\Customer Experience Improvement Program\KernelCeipTask',
+        '\Microsoft\Windows\Customer Experience Improvement Program\UsbCeip'
+    )) {
+        try {
+            $task = & $ProbeProvider.Task $taskPath
+            $taskMatches = if ($lean) { -not $task.Present -or -not $task.Enabled } else { $task.Present -and $task.Enabled }
+            Add-AcceptanceResult "removal.task.$(($taskPath.Split('\')[-1]).ToLowerInvariant())" 'DeclaredState' $true $(if ($taskMatches) { 'Pass' } else { 'Fail' }) ([string]$task.Evidence)
+        } catch { Add-AcceptanceResult "removal.task.$(($taskPath.Split('\')[-1]).ToLowerInvariant())" 'DeclaredState' $true 'Fail' $_.Exception.Message }
+    }
 
     foreach ($featureName in @('ServicesForNFS-ClientOnly', 'Microsoft-Windows-Subsystem-Linux', 'VirtualMachinePlatform', 'Microsoft-Hyper-V-All')) {
         Test-Presence "protected.feature.$($featureName.ToLowerInvariant())" 'Protected' $true 'Feature' @($featureName) $true
@@ -230,7 +284,7 @@ function Invoke-WinUtilInstalledAcceptance {
     $failedRequired = @($results | Where-Object { $_.Required -and $_.Status -ne 'Pass' })
     $document = [pscustomobject][ordered]@{
         SchemaVersion = '1.0'
-        HarnessVersion = '1.0.0'
+        HarnessVersion = '1.1.0'
         TimestampUtc = [DateTime]::UtcNow.ToString('o')
         ExpectedState = $ExpectedState
         Depth = $Depth
@@ -248,7 +302,7 @@ function Invoke-WinUtilInstalledAcceptance {
 
 if ($MyInvocation.InvocationName -ne '.') {
     if (-not $OutputPath) { throw 'OutputPath is required when invoking the acceptance harness.' }
-    $result = Invoke-WinUtilInstalledAcceptance -ExpectedState $ExpectedState -Depth $Depth -OutputPath $OutputPath -AbletonPath $AbletonPath -Vst3Path $Vst3Path -LatencyMonReportPath $LatencyMonReportPath -SmokeCommand $SmokeCommand -ProbeProvider $ProbeProvider
+    $result = Invoke-WinUtilInstalledAcceptance -ExpectedState $ExpectedState -Depth $Depth -OutputPath $OutputPath -AbletonPath $AbletonPath -Vst3Path $Vst3Path -LatencyMonReportPath $LatencyMonReportPath -SmokeCommand $SmokeCommand -PostLoginSmokeCommand $PostLoginSmokeCommand -ProbeProvider $ProbeProvider
     if ($PassThru) { $result }
     exit $result.ExitCode
 }
