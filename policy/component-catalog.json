@@ -1,0 +1,191 @@
+{
+  "schemaVersion": 1,
+  "documentType": "component-catalog",
+  "components": [
+    {
+      "id": "windows-search", "name": "Windows Search", "category": "windows-component", "defaultAction": "keep", "risk": "high",
+      "targets": [{ "kind": "service", "match": "WSearch" }, { "kind": "package", "match": "Microsoft-Windows-Search-*" }],
+      "protects": [], "conflicts": ["modern-shell"], "requires": [], "description": "Indexes local content and supplies Windows search experiences.", "reason": "A dedicated DAW may not need indexing or system search.", "consequences": "Search experiences and indexed lookup can stop working.", "reversible": false, "exposed": true
+    },
+    {
+      "id": "bing-search", "name": "Bing Search", "category": "privacy-runtime", "defaultAction": "keep", "risk": "safe",
+      "targets": [{ "kind": "registry", "match": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\Explorer:DisableSearchBoxSuggestions" }],
+      "protects": [], "conflicts": [], "requires": [], "description": "Adds web suggestions to Windows search.", "reason": "Web results are unnecessary on an offline-focused DAW.", "consequences": "Windows search no longer offers Bing suggestions.", "reversible": true, "exposed": true
+    },
+    {
+      "id": "widgets-webexperience", "name": "Widgets and Client.WebExperience", "category": "app", "defaultAction": "keep", "risk": "moderate",
+      "targets": [{ "kind": "appx", "match": "MicrosoftWindows.Client.WebExperience" }],
+      "protects": [], "conflicts": [], "requires": ["webview2"], "description": "Provides the Widgets board and Windows Web Experience package.", "reason": "Widgets add background and consumer content not needed for audio work.", "consequences": "Widgets and features hosted by WebExperience become unavailable.", "reversible": true, "exposed": true
+    },
+    {
+      "id": "copilot", "name": "Copilot", "category": "app", "defaultAction": "keep", "risk": "moderate",
+      "targets": [{ "kind": "appx", "match": "Microsoft.Copilot" }, { "kind": "registry", "match": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsCopilot:TurnOffWindowsCopilot" }],
+      "protects": [], "conflicts": [], "requires": [], "description": "Provides Microsoft's Copilot application and Windows integration.", "reason": "The Lean DAW profile does not use assistant integration.", "consequences": "Copilot entry points and the provisioned app are unavailable.", "reversible": true, "exposed": true
+    },
+    {
+      "id": "feedback-hub", "name": "Feedback Hub", "category": "app", "defaultAction": "keep", "risk": "safe",
+      "targets": [{ "kind": "appx", "match": "Microsoft.WindowsFeedbackHub" }],
+      "protects": [], "conflicts": [], "requires": [], "description": "Collects and submits Windows feedback and diagnostics.", "reason": "Feedback submission is not required on the reference workstation.", "consequences": "The Feedback Hub application is unavailable.", "reversible": true, "exposed": true
+    },
+    {
+      "id": "defender", "name": "Microsoft Defender", "category": "security", "defaultAction": "keep", "risk": "expert",
+      "targets": [{ "kind": "feature", "match": "Windows-Defender-*" }, { "kind": "service", "match": "WinDefend" }, { "kind": "package", "match": "Microsoft-Windows-Windows-Defender-*" }],
+      "protects": [], "conflicts": [], "requires": [], "description": "Provides built-in antimalware, drivers, services, and security integration.", "reason": "The reference profile deliberately delegates endpoint protection elsewhere.", "consequences": "Removing Defender materially reduces built-in protection and may affect servicing integrations.", "reversible": false, "exposed": true
+    },
+    {
+      "id": "smartscreen", "name": "SmartScreen", "category": "security", "defaultAction": "keep", "risk": "high",
+      "targets": [{ "kind": "registry", "match": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\System:EnableSmartScreen" }],
+      "protects": [], "conflicts": [], "requires": [], "description": "Checks downloaded files and applications against reputation services.", "reason": "The Lean DAW profile opts out of reputation checks.", "consequences": "Windows provides fewer warnings for unknown or malicious downloads.", "reversible": true, "exposed": true
+    },
+    {
+      "id": "uac", "name": "User Account Control", "category": "security", "defaultAction": "keep", "risk": "expert",
+      "targets": [{ "kind": "registry", "match": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System:EnableLUA" }],
+      "protects": [], "conflicts": ["microsoft-store-infrastructure"], "requires": [], "description": "Separates standard and elevated administrative operations.", "reason": "The Lean DAW default requests full UAC disable for unattended local operation.", "consequences": "Disabling EnableLUA weakens security and can break modern applications.", "reversible": true, "exposed": true
+    },
+    {
+      "id": "windows-ai", "name": "Windows AI (Client.CoreAI and Client.AIX)", "category": "windows-component", "defaultAction": "keep", "risk": "expert",
+      "targets": [{ "kind": "package", "match": "Microsoft-Windows-Client-CoreAI-*" }, { "kind": "package", "match": "Microsoft-Windows-Client-AIX-*" }],
+      "protects": [], "conflicts": ["client-cbs"], "requires": [], "description": "Supplies Windows AI platform components including Client.CoreAI and Client.AIX.", "reason": "The reference DAW does not require Windows AI functionality.", "consequences": "Windows AI features may fail and package removal can affect future upgrades.", "reversible": false, "exposed": true
+    },
+    {
+      "id": "onedrive", "name": "OneDrive", "category": "app", "defaultAction": "keep", "risk": "moderate",
+      "targets": [{ "kind": "package", "match": "Microsoft-Windows-OneDrive-*" }, { "kind": "appx", "match": "Microsoft.OneDriveSync" }],
+      "protects": [], "conflicts": [], "requires": [], "description": "Provides Microsoft cloud file synchronization and shell integration.", "reason": "Cloud file synchronization is outside the Lean DAW workflow.", "consequences": "OneDrive sync and its Explorer integration are unavailable.", "reversible": true, "exposed": true
+    },
+    {
+      "id": "xbox-gaming", "name": "Xbox, Game Bar, and Game DVR", "category": "app", "defaultAction": "keep", "risk": "moderate",
+      "targets": [{ "kind": "appx", "match": "Microsoft.Xbox*" }, { "kind": "appx", "match": "Microsoft.GamingApp" }, { "kind": "registry", "match": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\GameDVR:AllowGameDVR" }],
+      "protects": [], "conflicts": [], "requires": [], "description": "Provides Xbox applications, overlays, recording, Game Bar, and Game DVR.", "reason": "Gaming overlays and capture are unnecessary for the target DAW.", "consequences": "Xbox services, Game Bar, and Windows game capture are unavailable.", "reversible": true, "exposed": true
+    },
+    {
+      "id": "consumer-appx", "name": "Selected consumer AppX packages", "category": "app", "defaultAction": "keep", "risk": "moderate",
+      "targets": [{ "kind": "appx", "match": "Microsoft.BingNews" }, { "kind": "appx", "match": "Microsoft.BingWeather" }, { "kind": "appx", "match": "Microsoft.MicrosoftSolitaireCollection" }, { "kind": "appx", "match": "Clipchamp.Clipchamp" }],
+      "protects": [], "conflicts": [], "requires": [], "description": "Groups the explicitly selected news, weather, solitaire, and Clipchamp provisioned applications.", "reason": "These consumer applications are not part of the reference workstation workflow.", "consequences": "The selected provisioned applications are absent for new users.", "reversible": true, "exposed": true
+    },
+    {
+      "id": "telemetry-consumer-content", "name": "Telemetry and consumer content", "category": "privacy-runtime", "defaultAction": "keep", "risk": "high",
+      "targets": [{ "kind": "service", "match": "DiagTrack" }, { "kind": "scheduled-task", "match": "\\Microsoft\\Windows\\Customer Experience Improvement Program\\*" }, { "kind": "registry", "match": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\CloudContent:DisableWindowsConsumerFeatures" }],
+      "protects": [], "conflicts": ["windows-error-reporting"], "requires": [], "description": "Controls selected diagnostic telemetry tasks and promoted consumer content.", "reason": "The Lean DAW minimizes nonessential diagnostics and content suggestions.", "consequences": "Some diagnostic data and personalized content are disabled while WER remains protected separately.", "reversible": true, "exposed": true
+    },
+    {
+      "id": "nfs", "name": "NFS client", "category": "developer-virtualization", "defaultAction": "keep", "risk": "safe",
+      "targets": [{ "kind": "feature", "match": "ServicesForNFS-ClientOnly" }, { "kind": "feature", "match": "ClientForNFS-Infrastructure" }, { "kind": "feature", "match": "NFS-Administration" }],
+      "protects": [], "conflicts": [], "requires": [], "description": "Provides Windows client support and administration tools for Network File System shares.", "reason": "NFS must remain available for development and storage workflows.", "consequences": "Protection prevents broad feature rules from removing NFS payloads.", "reversible": true, "exposed": true
+    },
+    {
+      "id": "modern-shell", "name": "Modern Start menu and File Explorer", "category": "protected-runtime", "defaultAction": "protected", "risk": "expert",
+      "targets": [{ "kind": "package", "match": "Microsoft-Windows-StartMenuExperienceHost-*" }, { "kind": "package", "match": "Microsoft-Windows-ShellExperienceHost-*" }],
+      "protects": ["client-cbs"], "conflicts": ["windows-search"], "requires": ["client-cbs"], "description": "Provides the supported modern Start and Explorer shell experiences.", "reason": "The reference image must retain a functional Windows shell.", "consequences": "Removal can leave Windows without a usable Start menu or shell.", "reversible": false, "exposed": true
+    },
+    {
+      "id": "client-cbs", "name": "Client.CBS", "category": "protected-runtime", "defaultAction": "protected", "risk": "expert",
+      "targets": [{ "kind": "package", "match": "Microsoft-Windows-Client-CBS-*" }],
+      "protects": [], "conflicts": ["windows-ai"], "requires": [], "description": "Supplies core client shell and component-based servicing integration.", "reason": "Modern shell and servicing compatibility depend on Client.CBS.", "consequences": "Removal can break shell experiences and Windows servicing.", "reversible": false, "exposed": true
+    },
+    {
+      "id": "microsoft-store-infrastructure", "name": "Microsoft Store infrastructure", "category": "protected-runtime", "defaultAction": "protected", "risk": "expert",
+      "targets": [{ "kind": "appx", "match": "Microsoft.WindowsStore" }, { "kind": "service", "match": "InstallService" }],
+      "protects": ["desktop-app-installer"], "conflicts": ["uac"], "requires": ["desktop-app-installer"], "description": "Provides Store package acquisition, licensing, and installation infrastructure.", "reason": "Store and packaged application servicing must remain available.", "consequences": "Removal can prevent Store and MSIX application installation or updates.", "reversible": false, "exposed": true
+    },
+    {
+      "id": "desktop-app-installer", "name": "App Installer and WinGet", "category": "protected-runtime", "defaultAction": "protected", "risk": "expert",
+      "targets": [{ "kind": "appx", "match": "Microsoft.DesktopAppInstaller" }],
+      "protects": ["windows-app-runtime", "ui-xaml", "vclibs"], "conflicts": [], "requires": ["windows-app-runtime", "ui-xaml", "vclibs"], "description": "Provides App Installer and the WinGet package manager client.", "reason": "Application installation and developer setup depend on WinGet.", "consequences": "Removal eliminates WinGet and common MSIX installation paths.", "reversible": true, "exposed": true
+    },
+    {
+      "id": "windows-terminal", "name": "Windows Terminal", "category": "protected-runtime", "defaultAction": "protected", "risk": "high",
+      "targets": [{ "kind": "appx", "match": "Microsoft.WindowsTerminal" }],
+      "protects": ["windows-app-runtime", "ui-xaml", "vclibs"], "conflicts": [], "requires": ["windows-app-runtime", "ui-xaml", "vclibs"], "description": "Provides the modern terminal host for shells and developer tools.", "reason": "The developer-capable reference image retains Windows Terminal.", "consequences": "Removal loses the supported modern terminal application.", "reversible": true, "exposed": true
+    },
+    {
+      "id": "webview2", "name": "WebView2", "category": "protected-runtime", "defaultAction": "protected", "risk": "expert",
+      "targets": [{ "kind": "package", "match": "Microsoft-Windows-WebView2Runtime-*" }],
+      "protects": [], "conflicts": [], "requires": [], "description": "Hosts web content inside Windows desktop applications.", "reason": "Many retained desktop and developer applications require WebView2.", "consequences": "Removal can break applications that embed web interfaces.", "reversible": false, "exposed": true
+    },
+    {
+      "id": "windows-app-runtime", "name": "Windows App Runtime", "category": "protected-runtime", "defaultAction": "protected", "risk": "expert",
+      "targets": [{ "kind": "appx", "match": "Microsoft.WindowsAppRuntime.*" }],
+      "protects": [], "conflicts": [], "requires": [], "description": "Provides runtime libraries for modern Windows desktop applications.", "reason": "App Installer, Terminal, and other retained apps depend on this runtime.", "consequences": "Removal can prevent Windows App SDK applications from launching.", "reversible": true, "exposed": true
+    },
+    {
+      "id": "ui-xaml", "name": "UI.Xaml", "category": "protected-runtime", "defaultAction": "protected", "risk": "expert",
+      "targets": [{ "kind": "appx", "match": "Microsoft.UI.Xaml.*" }],
+      "protects": [], "conflicts": [], "requires": [], "description": "Provides XAML framework packages used by modern Windows applications.", "reason": "Retained packaged applications require UI.Xaml frameworks.", "consequences": "Removal can stop dependent applications from starting.", "reversible": true, "exposed": true
+    },
+    {
+      "id": "vclibs", "name": "VCLibs runtime frameworks", "category": "protected-runtime", "defaultAction": "protected", "risk": "expert",
+      "targets": [{ "kind": "appx", "match": "Microsoft.VCLibs.*" }],
+      "protects": [], "conflicts": [], "requires": [], "description": "Provides Visual C++ runtime frameworks for packaged applications.", "reason": "App Installer, Terminal, and other retained applications require VCLibs.", "consequences": "Removal can prevent dependent applications from launching.", "reversible": true, "exposed": true
+    },
+    {
+      "id": "wsl", "name": "Windows Subsystem for Linux", "category": "developer-virtualization", "defaultAction": "protected", "risk": "high",
+      "targets": [{ "kind": "feature", "match": "Microsoft-Windows-Subsystem-Linux" }, { "kind": "capability", "match": "Microsoft.Windows.Subsystem.Linux~~~~*" }],
+      "protects": ["virtual-machine-platform"], "conflicts": [], "requires": ["virtual-machine-platform"], "description": "Provides Windows Subsystem for Linux payloads and integration.", "reason": "The developer profile must be able to enable WSL later.", "consequences": "Removal prevents WSL installation or use without restoring payloads.", "reversible": true, "exposed": true
+    },
+    {
+      "id": "virtual-machine-platform", "name": "VirtualMachinePlatform", "category": "developer-virtualization", "defaultAction": "protected", "risk": "high",
+      "targets": [{ "kind": "feature", "match": "VirtualMachinePlatform" }],
+      "protects": [], "conflicts": [], "requires": ["hyper-v-payloads"], "description": "Provides virtualization components used by WSL2 and virtualized workloads.", "reason": "The reference image retains the ability to enable WSL2 and related tooling.", "consequences": "Removal prevents dependent virtualization features from being enabled.", "reversible": true, "exposed": true
+    },
+    {
+      "id": "hyper-v-payloads", "name": "Hyper-V payloads", "category": "developer-virtualization", "defaultAction": "protected", "risk": "high",
+      "targets": [{ "kind": "feature", "match": "Microsoft-Hyper-V-*" }],
+      "protects": [], "conflicts": [], "requires": [], "description": "Provides Hyper-V optional-feature payloads without requiring the hypervisor to be enabled.", "reason": "Keeping dormant payloads preserves future virtualization capability.", "consequences": "Removal prevents Hyper-V features from being enabled without source media.", "reversible": true, "exposed": true
+    },
+    {
+      "id": "windows-error-reporting", "name": "Windows Error Reporting", "category": "servicing-debug", "defaultAction": "protected", "risk": "high",
+      "targets": [{ "kind": "service", "match": "WerSvc" }, { "kind": "scheduled-task", "match": "\\Microsoft\\Windows\\Windows Error Reporting\\*" }],
+      "protects": [], "conflicts": ["telemetry-consumer-content"], "requires": [], "description": "Captures application and system failure reports and dump information.", "reason": "Crash diagnostics are valuable for DAW and plugin troubleshooting.", "consequences": "Removal makes failures harder to diagnose and can suppress crash reporting.", "reversible": true, "exposed": true
+    },
+    {
+      "id": "app-compatibility", "name": "Program and App Compatibility", "category": "servicing-debug", "defaultAction": "protected", "risk": "expert",
+      "targets": [{ "kind": "service", "match": "PcaSvc" }, { "kind": "package", "match": "Microsoft-Windows-Application-Experience-*" }],
+      "protects": [], "conflicts": [], "requires": [], "description": "Supplies application compatibility databases, shims, and the Program Compatibility Assistant.", "reason": "Older DAW software and plugins may require compatibility infrastructure.", "consequences": "Removal can break installers or applications that rely on compatibility shims.", "reversible": false, "exposed": true
+    },
+    {
+      "id": "sysmain-prefetch", "name": "SysMain and Prefetch", "category": "servicing-debug", "defaultAction": "protected", "risk": "moderate",
+      "targets": [{ "kind": "service", "match": "SysMain" }, { "kind": "registry", "match": "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Memory Management\\PrefetchParameters:EnablePrefetcher" }],
+      "protects": [], "conflicts": [], "requires": [], "description": "Optimizes application launch using usage history and prefetch data.", "reason": "The project retains these components until measurements justify changing them.", "consequences": "Disabling them can worsen launch performance on some systems.", "reversible": true, "exposed": true
+    },
+    {
+      "id": "feature-delivery", "name": "Windows feature-delivery infrastructure", "category": "servicing-debug", "defaultAction": "protected", "risk": "expert",
+      "targets": [{ "kind": "service", "match": "UsoSvc" }, { "kind": "scheduled-task", "match": "\\Microsoft\\Windows\\UpdateOrchestrator\\*" }],
+      "protects": ["featureconfig-onesettings", "windows-update"], "conflicts": [], "requires": ["featureconfig-onesettings", "windows-update"], "description": "Coordinates Windows feature delivery and update orchestration.", "reason": "Normal feature delivery must remain serviceable.", "consequences": "Removal can block feature updates and optional content delivery.", "reversible": false, "exposed": true
+    },
+    {
+      "id": "featureconfig-onesettings", "name": "FeatureConfig and OneSettings", "category": "servicing-debug", "defaultAction": "protected", "risk": "expert",
+      "targets": [{ "kind": "package", "match": "Microsoft-Windows-FeatureConfig-*" }, { "kind": "package", "match": "Microsoft-Windows-OneSettings-*" }],
+      "protects": [], "conflicts": [], "requires": [], "description": "Provides Windows feature configuration and OneSettings infrastructure.", "reason": "Retaining feature configuration reduces upgrade and feature-delivery breakage.", "consequences": "Removal can break managed feature state and future Windows changes.", "reversible": false, "exposed": true
+    },
+    {
+      "id": "cpu-mitigations", "name": "CPU security mitigations", "category": "security", "defaultAction": "protected", "risk": "expert",
+      "targets": [{ "kind": "registry", "match": "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Memory Management:FeatureSettingsOverride" }],
+      "protects": [], "conflicts": [], "requires": [], "description": "Controls operating-system mitigations for speculative execution vulnerabilities.", "reason": "No established DAW benefit justifies disabling CPU security mitigations by default.", "consequences": "Disabling mitigations exposes known CPU vulnerability classes.", "reversible": true, "exposed": true
+    },
+    {
+      "id": "windows-servicing-tasks", "name": "Windows servicing tasks", "category": "servicing-debug", "defaultAction": "protected", "risk": "expert",
+      "targets": [{ "kind": "scheduled-task", "match": "\\Microsoft\\Windows\\Servicing\\*" }],
+      "protects": ["component-store"], "conflicts": [], "requires": ["component-store"], "description": "Runs scheduled component servicing and maintenance operations.", "reason": "Servicing tasks are required for a maintainable Windows installation.", "consequences": "Removal can prevent maintenance and component repair.", "reversible": false, "exposed": true
+    },
+    {
+      "id": "component-store", "name": "WinSxS component store", "category": "servicing-debug", "defaultAction": "protected", "risk": "expert",
+      "targets": [{ "kind": "package", "match": "Microsoft-Windows-ServicingStack-*" }],
+      "protects": ["rollback-state"], "conflicts": [], "requires": ["rollback-state"], "description": "Stores component payloads and metadata used by Windows servicing and repair.", "reason": "The component store must remain intact and is never manually deleted.", "consequences": "Damage can make Windows unserviceable or unbootable.", "reversible": false, "exposed": true
+    },
+    {
+      "id": "rollback-state", "name": "Windows rollback state", "category": "servicing-debug", "defaultAction": "protected", "risk": "expert",
+      "targets": [{ "kind": "package", "match": "Microsoft-Windows-ServicingStack-*" }],
+      "protects": [], "conflicts": [], "requires": [], "description": "Retains superseded component state needed to uninstall updates when supported.", "reason": "Normal reversible cleanup must preserve update rollback state.", "consequences": "Discarding rollback state makes installed updates permanently non-removable.", "reversible": false, "exposed": true
+    },
+    {
+      "id": "windows-update", "name": "Windows Update", "category": "servicing-debug", "defaultAction": "protected", "risk": "expert",
+      "targets": [{ "kind": "service", "match": "wuauserv" }, { "kind": "service", "match": "WaaSMedicSvc" }],
+      "protects": ["feature-delivery", "windows-servicing-tasks"], "conflicts": [], "requires": ["feature-delivery", "windows-servicing-tasks"], "description": "Scans, downloads, and installs Windows updates and servicing fixes.", "reason": "The reference image must remain updateable and supported.", "consequences": "Removal prevents normal security and quality updates.", "reversible": false, "exposed": true
+    },
+    {
+      "id": "reversible-component-cleanup", "name": "Reversible component cleanup", "category": "servicing-debug", "defaultAction": "protected", "risk": "high",
+      "targets": [{ "kind": "scheduled-task", "match": "\\Microsoft\\Windows\\Servicing\\StartComponentCleanup" }],
+      "protects": ["rollback-state"], "conflicts": [], "requires": ["rollback-state"], "description": "Provides supported component-store cleanup without ResetBase.", "reason": "Cleanup remains supported while update rollback data is preserved.", "consequences": "Replacing it with irreversible cleanup can prevent update uninstall.", "reversible": true, "exposed": true
+    }
+  ]
+}
