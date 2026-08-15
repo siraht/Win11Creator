@@ -58,7 +58,7 @@ Describe "Deep customization component policy" {
 
     It "represents every servicing target kind separately" {
         $targetKinds = @($script:catalog.components.targets | ForEach-Object { $_.kind } | Sort-Object -Unique)
-        $targetKinds | Should -Be @("appx", "capability", "feature", "package", "registry", "scheduled-task", "service")
+        $targetKinds | Should -Be @("appx", "capability", "feature", "package", "registry", "scheduled-task", "security", "service", "setup")
     }
 
     It "covers every declared Lean DAW removal or disable concept" {
