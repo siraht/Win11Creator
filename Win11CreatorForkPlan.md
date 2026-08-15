@@ -14,7 +14,7 @@
 
 This compact record is the project owner's requested source for progress, decisions, rationale, lessons, and verification gaps. Update it when a change affects implementation direction or closes a plan item; do not duplicate ordinary commit history or test output here.
 
-**Current status:** Active — upstream baseline established; implementation workstreams are being bootstrapped.
+**Current status:** Active — upstream baseline pinned; implementation workstreams are being bootstrapped.
 
 **Pinned baseline**
 
@@ -36,6 +36,7 @@ This compact record is the project owner's requested source for progress, decisi
 **Progress log**
 
 * `2026-08-15T19:55:49Z` — Initialized the local fork from upstream `main`; read `AGENTS.md`, `CLAUDE.md`, and `SPEC.md`; confirmed that the only pre-existing workspace artifact was this plan.
+* `2026-08-15` — Committed this implementation plan as fork revision `d849084e11a1c3acc8a9a888b660c97e50596108`; the worktree was clean immediately after the commit.
 
 ---
 
@@ -182,9 +183,10 @@ Agent A and Agent B can work largely independently after the policy schema has a
 
 ### Validation lead; product and servicing workstreams participate as needed
 
-* [ ] **Fork and pin the exact upstream WinUtil revision used as the project baseline.**
+* [x] **Fork and pin the exact upstream WinUtil revision used as the project baseline.**
 
   * **Proof required:** upstream commit SHA, fork commit SHA, and a reproducibly clean baseline diff.
+  * **Proof:** upstream `0dbe39bc7df41ef7d0cef74426f26c53089a8557`; fork `d849084e11a1c3acc8a9a888b660c97e50596108`; `git status --porcelain` returned no output after the fork commit.
   * **Rationale:** Without a pinned base, later upstream changes make behavior and test results ambiguous.
 
 * [ ] **Run the existing WinUtil Pester suite before changing anything.**
