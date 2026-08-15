@@ -49,6 +49,7 @@ This compact record is the project owner's requested source for progress, decisi
 * PSScriptAnalyzer's new-source `$matches`/`$errors` automatic-variable hazards were fixed. Focused production analysis now reports only existing WinUtil naming conventions and UI-model `ShouldProcess` false positives/conventions; unrelated upstream warnings remain out of scope.
 * The Advanced Package Selector has a tested model and actionable override wiring, but it has not yet been populated from a live mounted image. The integration path must obtain inventory, regenerate a safe plan after every override, and stage registry actions without introducing a redundant WIM mount.
 * The offline transaction currently accepts only `install.wim`; ESD-to-WIM export remains an explicit source-format task. Mocked cmdlet coverage does not prove Windows 11 25H2 DISM behavior.
+* Upstream Win11 Creator still injects an unconditional first-logon customization script that removes a broad AppX list, disables Windows Update services, and deletes WER/AppCompat/Update task definitions. That legacy path conflicts with the new protected policy and must be replaced by profile-derived offline actions plus the minimal intentional setup residue before any end-to-end profile claim.
 
 **Progress log**
 
