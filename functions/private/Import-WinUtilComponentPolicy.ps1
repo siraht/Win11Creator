@@ -157,9 +157,10 @@ function Test-WinUtilComponentPolicy {
                 }
             }
         }
+        $exclusiveGroups = if ($Policy.PSObject.Properties.Name -contains 'exclusiveGroups') { @($Policy.exclusiveGroups) } else { @() }
         $exclusiveGroupIds = New-Object System.Collections.Generic.HashSet[string]
         $exclusiveMemberIds = New-Object System.Collections.Generic.HashSet[string]
-        foreach ($group in @($Policy.exclusiveGroups)) {
+        foreach ($group in $exclusiveGroups) {
             $groupId = [string]$group.id
             if ([string]::IsNullOrWhiteSpace($groupId)) {
                 $validationErrors.Add('Catalog exclusive group is missing id.')
