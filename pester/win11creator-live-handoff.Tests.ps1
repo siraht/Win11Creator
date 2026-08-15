@@ -155,6 +155,24 @@ Describe 'Win11 Creator live policy handoff' {
         $sync.WPFWin11ISOModifyButton.IsEnabled | Should -BeTrue
     }
 
+    It 'applies the profile dropdown as a fresh live preset without stale package or UAC overrides' {
+        $sync.WPFWin11ISOExpertMode.IsChecked = $true
+        $sync.Win11ISOManualOverrides = @([pscustomobject]@{
+            Kind = 'AppX'; Identity = 'Microsoft.WindowsFeedbackHub_1.0_neutral_~_8wekyb3d8bbwe'; Action = 'Keep'
+        })
+        $sync.Win11ISOComponentActionOverrides = @{ 'uac-prompt-suppression' = 'disable'; uac = 'keep' }
+
+        Set-WinUtilComponentPolicyProfile -ProfileId 'lean-daw'
+
+        $sync.Win11ISOManualOverrides | Should -BeNullOrEmpty
+        $sync.Win11ISOComponentActionOverrides.Count | Should -Be 0
+        ($sync.Win11ISOResolvedPlan.Decisions | Where-Object Name -eq 'Microsoft.WindowsFeedbackHub').Action | Should -Be 'Remove'
+        $sync.Win11ISOActionBundle.RegistryActions | Where-Object {
+            $_.SourceComponentId -eq 'uac' -and $_.Name -eq 'EnableLUA' -and [int]$_.Value -eq 0
+        } | Should -HaveCount 1
+        $sync.Win11ISOPolicyHandoff.IsReady | Should -BeTrue
+    }
+
     It 'plants the negative that stale inventory cannot retain a ready build state' {
         Resolve-WinUtilComponentPolicyHandoff | Out-Null
         $sync.Win11ISOOfflineSession.ImageIndex = 5

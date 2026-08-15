@@ -372,6 +372,18 @@ function Clear-WinUtilComponentPolicyAnalysisState {
         -ActionOverrides $sync['Win11ISOComponentActionOverrides']
 }
 
+function Set-WinUtilComponentPolicyProfile {
+    <#
+    .SYNOPSIS
+        Applies a profile as a fresh preset and regenerates the live handoff when analysis exists.
+    #>
+    param ([Parameter(Mandatory)][string]$ProfileId)
+
+    $sync['Win11ISOManualOverrides'] = @()
+    $sync['Win11ISOComponentActionOverrides'] = @{}
+    Update-WinUtilComponentPolicyUI -SelectedProfileId $ProfileId
+}
+
 function Update-WinUtilComponentPolicyUI {
     param (
         [Parameter(Mandatory)][string]$SelectedProfileId,

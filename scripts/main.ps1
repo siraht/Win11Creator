@@ -138,8 +138,7 @@ Initialize-WinUtilComponentPolicyUI
 
 $sync.WPFWin11ISOProfileComboBox.Add_SelectionChanged({
     if ($sync.WPFWin11ISOProfileComboBox.SelectedValue) {
-        $sync['Win11ISOComponentActionOverrides'] = @{}
-        Update-WinUtilComponentPolicyUI -SelectedProfileId ([string]$sync.WPFWin11ISOProfileComboBox.SelectedValue)
+        Set-WinUtilComponentPolicyProfile -ProfileId ([string]$sync.WPFWin11ISOProfileComboBox.SelectedValue)
     }
 })
 
