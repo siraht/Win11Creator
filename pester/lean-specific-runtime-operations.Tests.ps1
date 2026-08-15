@@ -13,7 +13,7 @@ Describe 'Lean-specific runtime operations' {
         $script:template = Get-Content -LiteralPath (Join-Path $script:repoRoot 'tools/autounattend.xml') -Raw
     }
 
-    It 'blocks Lean Defender removal as a distinct unimplemented security operation' {
+    It 'blocks Lean Defender removal when mounted inventory exposes no supported target' {
         $result = Resolve-WinUtilComponentPolicyPlan -Inventory $script:inventory -Catalog $script:catalog -Profile $script:lean -OfflineSystemSelect ([pscustomobject]@{ Current = 1 }) -ExpertMode
         $result.ActionBundle.IsReady | Should -BeFalse
         $result.ActionBundle.SecurityOperations | Should -HaveCount 1

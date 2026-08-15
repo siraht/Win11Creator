@@ -22,6 +22,7 @@ Describe 'Win11 Creator live policy handoff' {
             Source = [pscustomobject]@{ ImagePath = 'copied-install.wim'; ImageIndex = 6; ImageName = 'Windows 11 Pro' }
             Items = @(
                 [pscustomobject]@{ Kind = 'AppX'; Name = 'Microsoft.WindowsFeedbackHub'; Identity = 'Microsoft.WindowsFeedbackHub_1.0_neutral_~_8wekyb3d8bbwe'; State = 'Provisioned' },
+                [pscustomobject]@{ Kind = 'Package'; Name = 'Microsoft-Windows-Windows-Defender-Package'; Identity = 'Microsoft-Windows-Windows-Defender-Package~31bf3856ad364e35~amd64~~10.0.26200.1'; State = 'Installed' },
                 [pscustomobject]@{ Kind = 'Package'; Name = 'Microsoft-Windows-StartMenuExperienceHost-Package'; Identity = 'Microsoft-Windows-StartMenuExperienceHost-Package~31bf~amd64~~10.0.1.0'; State = 'Installed' },
                 [pscustomobject]@{ Kind = 'Package'; Name = 'Unknown'; Identity = 'Contoso.Unknown~test'; State = 'Installed' }
             )
@@ -150,7 +151,7 @@ Describe 'Win11 Creator live policy handoff' {
         ($sync.Win11ISOResolvedPlan.Decisions | Where-Object Name -eq 'Microsoft.WindowsFeedbackHub').Action | Should -Be 'Remove'
         $sync.WPFWin11ISOSummaryRemove.Text | Should -BeGreaterThan 0
         @($sync.WPFWin11ISOAppsItems.ItemsSource).Count | Should -BeGreaterThan 0
-        @($sync.WPFWin11ISOAdvancedPackageItems.ItemsSource).Count | Should -Be 3
+        @($sync.WPFWin11ISOAdvancedPackageItems.ItemsSource).Count | Should -Be 4
         $sync.Win11ISOPolicyHandoff.IsReady | Should -BeTrue
         $sync.WPFWin11ISOModifyButton.IsEnabled | Should -BeTrue
     }
