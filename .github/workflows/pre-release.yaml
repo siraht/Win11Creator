@@ -16,6 +16,11 @@ on:
         options:
           - Release
           - Quick
+      image-index:
+        description: Image index from the official Windows 11 x64 25H2 source ISO
+        required: true
+        type: string
+        default: '6'
       stock-edition:
         description: Exact /IMAGE/NAME in the StockControl ISO
         required: true
@@ -113,9 +118,9 @@ jobs:
     needs: build-runspace
     runs-on: [self-hosted, Windows, X64, win11creator-validation]
     env:
-      WINUTIL_STOCK_CONTROL_ISO_PATH: ${{ vars.WINUTIL_STOCK_CONTROL_ISO_PATH }}
-      WINUTIL_LEAN_DAW_ISO_PATH: ${{ vars.WINUTIL_LEAN_DAW_ISO_PATH }}
+      WINUTIL_OFFICIAL_SOURCE_ISO_PATH: ${{ vars.WINUTIL_OFFICIAL_SOURCE_ISO_PATH }}
       WINUTIL_OSCDIMG_PATH: ${{ vars.WINUTIL_OSCDIMG_PATH }}
+      WINUTIL_DRIVER_DIRECTORY: ${{ vars.WINUTIL_DRIVER_DIRECTORY }}
       WINUTIL_HYPERV_SWITCH: ${{ vars.WINUTIL_HYPERV_SWITCH }}
       WINUTIL_VM_GUEST_USERNAME: ${{ vars.WINUTIL_VM_GUEST_USERNAME }}
       WINUTIL_VM_GUEST_PASSWORD: ${{ secrets.WINUTIL_VM_GUEST_PASSWORD }}
@@ -127,6 +132,35 @@ jobs:
     steps:
       - name: Checkout acceptance harness
         uses: actions/checkout@v7
+
+      - name: Build StockControl and Lean DAW ISOs from official media
+        shell: pwsh
+        run: |
+          foreach ($requiredValue in @{
+            WINUTIL_OFFICIAL_SOURCE_ISO_PATH = $env:WINUTIL_OFFICIAL_SOURCE_ISO_PATH
+            WINUTIL_OSCDIMG_PATH = $env:WINUTIL_OSCDIMG_PATH
+          }.GetEnumerator()) {
+            if (-not $requiredValue.Value) { throw "Required build setting '$($requiredValue.Key)' is empty." }
+          }
+          $imageIndex = 0
+          if (-not [int]::TryParse('${{ inputs['image-index'] }}', [ref]$imageIndex) -or $imageIndex -lt 1) {
+            throw "image-index must be a positive integer."
+          }
+          $common = @{
+            SourceIsoPath = $env:WINUTIL_OFFICIAL_SOURCE_ISO_PATH
+            ImageIndex = $imageIndex
+            OscdimgPath = $env:WINUTIL_OSCDIMG_PATH
+          }
+          if ($env:WINUTIL_DRIVER_DIRECTORY) { $common.DriverDirectory = $env:WINUTIL_DRIVER_DIRECTORY }
+
+          $stockIso = '${{ runner.temp }}\WinUtil-StockControl-${{ github.run_id }}-${{ github.run_attempt }}.iso'
+          $leanIso = '${{ runner.temp }}\WinUtil-LeanDAW-${{ github.run_id }}-${{ github.run_attempt }}.iso'
+          ./tools/Invoke-WinUtilWindowsBuild.ps1 @common -Profile default-winutil -OutputIsoPath $stockIso `
+            -WorkDirectory '${{ runner.temp }}\winutil-stock-build-${{ github.run_id }}-${{ github.run_attempt }}'
+          ./tools/Invoke-WinUtilWindowsBuild.ps1 @common -Profile lean-daw -ExpertMode -OutputIsoPath $leanIso `
+            -WorkDirectory '${{ runner.temp }}\winutil-lean-build-${{ github.run_id }}-${{ github.run_attempt }}'
+          "WINUTIL_STOCK_CONTROL_ISO_PATH=$stockIso" >> $env:GITHUB_ENV
+          "WINUTIL_LEAN_DAW_ISO_PATH=$leanIso" >> $env:GITHUB_ENV
 
       - name: Install generated ISOs and run guest acceptance gates
         shell: pwsh
