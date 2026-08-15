@@ -462,6 +462,7 @@ Describe "XAML and sync wiring" {
             "InstallAppEntriesRendered",
             "FontScaleFactor",
             "Win11ISOImageInfo",
+            "Win11ISOImageSupport",
             "Win11ISODriveLetter",
             "Win11ISOWimPath",
             "Win11ISOImagePath",

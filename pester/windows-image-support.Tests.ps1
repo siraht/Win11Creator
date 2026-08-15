@@ -51,8 +51,11 @@ Describe 'Windows image v1 support boundary' {
     It 'wires mount verification and Analyze to the support result' {
         $source = Get-Content (Join-Path $PSScriptRoot '..\functions\private\Invoke-WinUtilISO.ps1') -Raw
         $source | Should -Match 'Test-WinUtilWindowsImageSupport -ImageMetadata \$imageInfo'
+        $source | Should -Match 'Get-WinUtilInstallImage -MediaRoot \$driveLetter'
         $source | Should -Match '\$support\.Editions'
         $source | Should -Match ([regex]::Escape("`$sync['Win11ISOImageSupport'].IsSupported -ne `$true"))
         $source | Should -Match 'Use an official Windows 11 x64 25H2 ISO'
+        $source | Should -Match 'Timed out waiting for the mounted ISO'
+        $source | Should -Match '(?s)catch \{.*Dismount-DiskImage -ImagePath \$isoPath'
     }
 }

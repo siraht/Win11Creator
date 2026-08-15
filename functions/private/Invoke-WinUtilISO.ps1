@@ -70,7 +70,11 @@ function Invoke-WinUtilISOMountAndVerify {
         try {
             Mount-DiskImage -ImagePath $isoPath
 
+            $mountDeadline = [DateTime]::UtcNow.AddSeconds(60)
             do {
+                if ([DateTime]::UtcNow -ge $mountDeadline) {
+                    throw 'Timed out waiting for the mounted ISO to expose a drive letter.'
+                }
                 Start-Sleep -Milliseconds 500
             } until ((Get-DiskImage -ImagePath $isoPath | Get-Volume).DriveLetter)
 
@@ -79,21 +83,8 @@ function Invoke-WinUtilISOMountAndVerify {
 
             Set-WinUtilTweaksProgressIndicator -Visible $true -Label "Verifying ISO contents..." -Percent 30
 
-            $wimPath = Join-Path $driveLetter "sources\install.wim"
-            $esdPath = Join-Path $driveLetter "sources\install.esd"
-
-            if (-not (Test-Path $wimPath) -and -not (Test-Path $esdPath)) {
-                Dismount-DiskImage -ImagePath $isoPath
-                Write-WinUtilISOLog "ERROR: install.wim/install.esd not found - not a valid Windows ISO."
-                Invoke-WPFUIThread {
-                    [System.Windows.MessageBox]::Show(
-                        "This does not appear to be a valid Windows ISO.`n`ninstall.wim / install.esd was not found.",
-                        "Invalid ISO", "OK", "Error")
-                }
-                return
-            }
-
-            $activeWim = if (Test-Path $wimPath) { $wimPath } else { $esdPath }
+            $sourceInstallImage = Get-WinUtilInstallImage -MediaRoot $driveLetter
+            $activeWim = [string]$sourceInstallImage.Path
 
             Set-WinUtilTweaksProgressIndicator -Visible $true -Label "Reading image metadata..." -Percent 55
             $imageInfo = @(Get-WindowsImage -ImagePath $activeWim)
@@ -144,6 +135,15 @@ function Invoke-WinUtilISOMountAndVerify {
             Write-WinUtilISOLog "ISO verified OK. $($support.Reason)"
         } catch {
             $errorMessage = $_
+            $sync["Win11ISOImageSupport"] = $null
+            $sync["Win11ISOImageInfo"] = $null
+            $sync["Win11ISOWimPath"] = $null
+            try {
+                $mountedISO = Get-DiskImage -ImagePath $isoPath -ErrorAction SilentlyContinue
+                if ($mountedISO -and $mountedISO.Attached) { Dismount-DiskImage -ImagePath $isoPath -ErrorAction Stop }
+            } catch {
+                Write-WinUtilISOLog "Warning: failed to dismount the rejected ISO: $_"
+            }
             Write-WinUtilISOLog "ERROR during mount/verify: $errorMessage"
             Invoke-WPFUIThread {
                 [System.Windows.MessageBox]::Show(
@@ -626,6 +626,7 @@ function Invoke-WinUtilISOCleanAndReset {
                 $sync["Win11ISODriveLetter"] = $null
                 $sync["Win11ISOWimPath"]     = $null
                 $sync["Win11ISOImageInfo"]   = $null
+                $sync["Win11ISOImageSupport"] = $null
                 $sync["Win11ISOUSBDisks"]    = $null
 
                 $sync["WPFWin11ISOPath"].Text                   = "No ISO selected..."
