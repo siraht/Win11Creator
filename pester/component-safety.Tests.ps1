@@ -65,7 +65,13 @@ Describe 'Test-WinUtilComponentSafety dependency contracts' {
         }
 
         $result.IsAllowed | Should -BeFalse
-        $result.Conflicts.Severity | Should -Contain 'forbidden-unless-expert'
+        $result.Conflicts | Where-Object {
+            $_.ComponentId -eq 'windows-app-runtime' -and
+            $_.RelatedComponentId -eq 'app-installer' -and
+            $_.Severity -eq 'forbidden-unless-expert' -and
+            $_.Reason -eq 'App Installer requires Windows App Runtime.' -and
+            $_.IsBlocking
+        } | Should -HaveCount 1
     }
 
     It 'ComponentSafety_ExpertModeAllowsForbiddenConflictButRetainsEvidence' {
