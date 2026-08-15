@@ -41,6 +41,7 @@ This compact record is the project owner's requested source for progress, decisi
 * Generic dependency evaluation can be verified cross-platform, but the accuracy of real Windows dependency declarations still requires catalog review and VM behavior checks.
 * The current resolver deliberately reapplies catalog protection after manual overrides. The Expert-mode path must explicitly coordinate the resolver and safety evaluator before protected removal can be exposed in the UI.
 * Isolated policy and engine tests exposed contract mismatches that must be resolved before the shared schema closes: wildcard targets need explicit match semantics, and string conflict references need structured action/severity data consumable by the safety evaluator.
+* PSScriptAnalyzer identified two actionable new-source naming hazards: `$matches` and `$errors` shadow PowerShell automatic variables case-insensitively. The contract-integration slice owns those renames; unrelated upstream analyzer warnings remain out of scope.
 
 **Progress log**
 
@@ -50,6 +51,7 @@ This compact record is the project owner's requested source for progress, decisi
 * `2026-08-15` — Integrated safety evaluator commits `7f3380c`, `45d4471`, and `dc03ce6`; focused Pester result: 4 passed, 0 failed; `Compile.ps1` completed successfully.
 * `2026-08-15` — Integrated inventory/resolver commits `5f87dd3` and `c87cbef`; focused Pester result: 10 passed, 0 failed; `Compile.ps1` completed successfully. Live inventory and servicing remain unverified.
 * `2026-08-15` — Integrated policy/catalog commits `619791e` and `ce91b13`; focused Pester result: 8 passed, 0 failed; `Compile.ps1` completed successfully. Shared policy-to-engine/WPF runtime integration remains open.
+* `2026-08-15` — Ran the complete suite after wave one: 583 discovered, 547 passed, 34 failed, 2 skipped. Compared with the untouched baseline, all 34 added tests passed and no new failures appeared; existing Linux failures were unchanged in category.
 
 ---
 
