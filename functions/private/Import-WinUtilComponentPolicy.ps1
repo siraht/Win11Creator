@@ -20,6 +20,8 @@ function Test-WinUtilComponentPolicy {
     $allowedTargetKinds = @("appx", "package", "capability", "feature", "registry", "service", "scheduled-task")
     $allowedMatchTypes = @("exact", "wildcard", "version-insensitive")
     $allowedConflictSeverities = @("warning", "likely-breakage", "forbidden-unless-expert")
+    $allowedRegistryHives = @("SOFTWARE", "SYSTEM", "DEFAULT")
+    $allowedRegistryTypes = @("REG_SZ", "REG_EXPAND_SZ", "REG_DWORD", "REG_QWORD", "REG_MULTI_SZ", "REG_BINARY")
 
     if ($Policy.schemaVersion -ne 1) {
         $validationErrors.Add("Unsupported component policy schemaVersion '$($Policy.schemaVersion)'.")
@@ -64,6 +66,57 @@ function Test-WinUtilComponentPolicy {
                     $validationErrors.Add("Component '$componentId' wildcard target '$($target.match)' must contain * or ?.")
                 } elseif ($target.matchType -ne "wildcard" -and [string]$target.match -match '[*?]') {
                     $validationErrors.Add("Component '$componentId' $($target.matchType) target '$($target.match)' cannot contain * or ?.")
+                }
+                foreach ($operation in @($target.operations)) {
+                    if ($null -eq $operation) {
+                        continue
+                    }
+                    if ($operation.onAction -notin @("remove", "disable")) {
+                        $validationErrors.Add("Component '$componentId' target operation has invalid onAction '$($operation.onAction)'.")
+                    }
+                    switch ([string]$operation.operation) {
+                        "set-registry-value" {
+                            if ($target.kind -ne "registry") {
+                                $validationErrors.Add("Component '$componentId' registry operation is attached to '$($target.kind)' target.")
+                            }
+                            foreach ($field in @("hive", "key", "name", "type")) {
+                                if ([string]::IsNullOrWhiteSpace([string]$operation.$field)) {
+                                    $validationErrors.Add("Component '$componentId' registry operation is missing $field.")
+                                }
+                            }
+                            if ($allowedRegistryHives -notcontains $operation.hive) {
+                                $validationErrors.Add("Component '$componentId' registry operation has unsupported hive '$($operation.hive)'.")
+                            }
+                            if ($allowedRegistryTypes -notcontains $operation.type) {
+                                $validationErrors.Add("Component '$componentId' registry operation has unsupported type '$($operation.type)'.")
+                            }
+                            if ($operation.PSObject.Properties.Name -notcontains "value") {
+                                $validationErrors.Add("Component '$componentId' registry operation is missing value.")
+                            }
+                        }
+                        "disable-service" {
+                            if ($target.kind -ne "service") {
+                                $validationErrors.Add("Component '$componentId' service operation is attached to '$($target.kind)' target.")
+                            }
+                            if ($target.matchType -ne "exact" -or [string]$operation.serviceName -ne [string]$target.match) {
+                                $validationErrors.Add("Component '$componentId' service operation must name its exact service target.")
+                            }
+                            if ($operation.startupType -ne "disabled") {
+                                $validationErrors.Add("Component '$componentId' service operation has unsupported startupType '$($operation.startupType)'.")
+                            }
+                        }
+                        "disable-scheduled-task-at-setup" {
+                            if ($target.kind -ne "scheduled-task") {
+                                $validationErrors.Add("Component '$componentId' scheduled-task operation is attached to '$($target.kind)' target.")
+                            }
+                            if ([string]$operation.taskPath -notmatch '^\\Microsoft\\Windows\\[^*?]+$') {
+                                $validationErrors.Add("Component '$componentId' scheduled-task operation requires an exact Microsoft task path.")
+                            }
+                        }
+                        default {
+                            $validationErrors.Add("Component '$componentId' target has unsupported operation '$($operation.operation)'.")
+                        }
+                    }
                 }
             }
             foreach ($conflict in @($component.conflicts)) {

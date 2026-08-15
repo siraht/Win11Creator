@@ -12,7 +12,15 @@
         {
           "kind": "service",
           "match": "WSearch",
-          "matchType": "exact"
+          "matchType": "exact",
+          "operations": [
+            {
+              "operation": "disable-service",
+              "onAction": "disable",
+              "serviceName": "WSearch",
+              "startupType": "disabled"
+            }
+          ]
         },
         {
           "kind": "package",
@@ -47,7 +55,18 @@
         {
           "kind": "registry",
           "match": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\Explorer:DisableSearchBoxSuggestions",
-          "matchType": "exact"
+          "matchType": "exact",
+          "operations": [
+            {
+              "operation": "set-registry-value",
+              "onAction": "disable",
+              "hive": "SOFTWARE",
+              "key": "Policies\\Microsoft\\Windows\\Explorer",
+              "name": "DisableSearchBoxSuggestions",
+              "type": "REG_DWORD",
+              "value": 1
+            }
+          ]
         }
       ],
       "protects": [],
@@ -98,7 +117,18 @@
         {
           "kind": "registry",
           "match": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsCopilot:TurnOffWindowsCopilot",
-          "matchType": "exact"
+          "matchType": "exact",
+          "operations": [
+            {
+              "operation": "set-registry-value",
+              "onAction": "remove",
+              "hive": "SOFTWARE",
+              "key": "Policies\\Microsoft\\Windows\\WindowsCopilot",
+              "name": "TurnOffWindowsCopilot",
+              "type": "REG_DWORD",
+              "value": 1
+            }
+          ]
         }
       ],
       "protects": [],
@@ -147,7 +177,15 @@
         {
           "kind": "service",
           "match": "WinDefend",
-          "matchType": "exact"
+          "matchType": "exact",
+          "operations": [
+            {
+              "operation": "disable-service",
+              "onAction": "remove",
+              "serviceName": "WinDefend",
+              "startupType": "disabled"
+            }
+          ]
         },
         {
           "kind": "package",
@@ -174,7 +212,18 @@
         {
           "kind": "registry",
           "match": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\System:EnableSmartScreen",
-          "matchType": "exact"
+          "matchType": "exact",
+          "operations": [
+            {
+              "operation": "set-registry-value",
+              "onAction": "disable",
+              "hive": "SOFTWARE",
+              "key": "Policies\\Microsoft\\Windows\\System",
+              "name": "EnableSmartScreen",
+              "type": "REG_DWORD",
+              "value": 0
+            }
+          ]
         }
       ],
       "protects": [],
@@ -196,7 +245,18 @@
         {
           "kind": "registry",
           "match": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System:EnableLUA",
-          "matchType": "exact"
+          "matchType": "exact",
+          "operations": [
+            {
+              "operation": "set-registry-value",
+              "onAction": "disable",
+              "hive": "SOFTWARE",
+              "key": "Microsoft\\Windows\\CurrentVersion\\Policies\\System",
+              "name": "EnableLUA",
+              "type": "REG_DWORD",
+              "value": 0
+            }
+          ]
         }
       ],
       "protects": [],
@@ -298,7 +358,18 @@
         {
           "kind": "registry",
           "match": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\GameDVR:AllowGameDVR",
-          "matchType": "exact"
+          "matchType": "exact",
+          "operations": [
+            {
+              "operation": "set-registry-value",
+              "onAction": "remove",
+              "hive": "SOFTWARE",
+              "key": "Policies\\Microsoft\\Windows\\GameDVR",
+              "name": "AllowGameDVR",
+              "type": "REG_DWORD",
+              "value": 0
+            }
+          ]
         }
       ],
       "protects": [],
@@ -357,17 +428,53 @@
         {
           "kind": "service",
           "match": "DiagTrack",
-          "matchType": "exact"
+          "matchType": "exact",
+          "operations": [
+            {
+              "operation": "disable-service",
+              "onAction": "disable",
+              "serviceName": "DiagTrack",
+              "startupType": "disabled"
+            }
+          ]
         },
         {
           "kind": "scheduled-task",
           "match": "\\Microsoft\\Windows\\Customer Experience Improvement Program\\*",
-          "matchType": "wildcard"
+          "matchType": "wildcard",
+          "operations": [
+            {
+              "operation": "disable-scheduled-task-at-setup",
+              "onAction": "disable",
+              "taskPath": "\\Microsoft\\Windows\\Customer Experience Improvement Program\\Consolidator"
+            },
+            {
+              "operation": "disable-scheduled-task-at-setup",
+              "onAction": "disable",
+              "taskPath": "\\Microsoft\\Windows\\Customer Experience Improvement Program\\KernelCeipTask"
+            },
+            {
+              "operation": "disable-scheduled-task-at-setup",
+              "onAction": "disable",
+              "taskPath": "\\Microsoft\\Windows\\Customer Experience Improvement Program\\UsbCeip"
+            }
+          ]
         },
         {
           "kind": "registry",
           "match": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\CloudContent:DisableWindowsConsumerFeatures",
-          "matchType": "exact"
+          "matchType": "exact",
+          "operations": [
+            {
+              "operation": "set-registry-value",
+              "onAction": "disable",
+              "hive": "SOFTWARE",
+              "key": "Policies\\Microsoft\\Windows\\CloudContent",
+              "name": "DisableWindowsConsumerFeatures",
+              "type": "REG_DWORD",
+              "value": 1
+            }
+          ]
         }
       ],
       "protects": [],
@@ -1021,6 +1128,50 @@
       "description": "Provides supported component-store cleanup without ResetBase.",
       "reason": "Cleanup remains supported while update rollback data is preserved.",
       "consequences": "Replacing it with irreversible cleanup can prevent update uninstall.",
+      "reversible": true,
+      "exposed": true
+    },
+    {
+      "id": "openssh-client",
+      "name": "OpenSSH client",
+      "category": "developer-virtualization",
+      "defaultAction": "keep",
+      "risk": "safe",
+      "targets": [
+        {
+          "kind": "capability",
+          "match": "OpenSSH.Client~~~~*",
+          "matchType": "wildcard"
+        }
+      ],
+      "protects": [],
+      "conflicts": [],
+      "requires": [],
+      "description": "Provides the supported Windows OpenSSH command-line client.",
+      "reason": "Developer and remote-management workflows may require the OpenSSH client.",
+      "consequences": "Protection prevents broad capability removal from removing the SSH client.",
+      "reversible": true,
+      "exposed": true
+    },
+    {
+      "id": "openssh-server",
+      "name": "OpenSSH server",
+      "category": "developer-virtualization",
+      "defaultAction": "keep",
+      "risk": "high",
+      "targets": [
+        {
+          "kind": "capability",
+          "match": "OpenSSH.Server~~~~*",
+          "matchType": "wildcard"
+        }
+      ],
+      "protects": [],
+      "conflicts": [],
+      "requires": [],
+      "description": "Provides the supported Windows OpenSSH server capability.",
+      "reason": "Developer and remote-administration workflows may intentionally retain SSH server support.",
+      "consequences": "Protection retains the capability but does not enable the service or open the firewall.",
       "reversible": true,
       "exposed": true
     }

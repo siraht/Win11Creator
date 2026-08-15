@@ -54,6 +54,45 @@
       },
       "additionalProperties": false
     },
+    "operation": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["operation", "onAction", "hive", "key", "name", "type", "value"],
+          "properties": {
+            "operation": { "const": "set-registry-value" },
+            "onAction": { "enum": ["remove", "disable"] },
+            "hive": { "enum": ["SOFTWARE", "SYSTEM", "DEFAULT"] },
+            "key": { "type": "string", "minLength": 1 },
+            "name": { "type": "string", "minLength": 1 },
+            "type": { "enum": ["REG_SZ", "REG_EXPAND_SZ", "REG_DWORD", "REG_QWORD", "REG_MULTI_SZ", "REG_BINARY"] },
+            "value": { "type": ["string", "number", "integer", "boolean"] }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["operation", "onAction", "serviceName", "startupType"],
+          "properties": {
+            "operation": { "const": "disable-service" },
+            "onAction": { "enum": ["remove", "disable"] },
+            "serviceName": { "type": "string", "pattern": "^[A-Za-z0-9_.-]+$" },
+            "startupType": { "const": "disabled" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["operation", "onAction", "taskPath"],
+          "properties": {
+            "operation": { "const": "disable-scheduled-task-at-setup" },
+            "onAction": { "enum": ["remove", "disable"] },
+            "taskPath": { "type": "string", "pattern": "^\\\\Microsoft\\\\Windows\\\\[^*?]+$" }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
     "target": {
       "type": "object",
       "required": ["kind", "match", "matchType"],
@@ -62,7 +101,8 @@
           "enum": ["appx", "package", "capability", "feature", "registry", "service", "scheduled-task"]
         },
         "match": { "type": "string", "minLength": 1 },
-        "matchType": { "$ref": "#/$defs/matchType" }
+        "matchType": { "$ref": "#/$defs/matchType" },
+        "operations": { "type": "array", "items": { "$ref": "#/$defs/operation" } }
       },
       "additionalProperties": false
     },
