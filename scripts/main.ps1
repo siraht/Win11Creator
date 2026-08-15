@@ -183,6 +183,7 @@ $sync.WPFWin11ISOExpertMode.Add_Unchecked($refreshAdvancedPackageSelector)
 $advancedPackageSelectionHandler = [System.Windows.RoutedEventHandler]{
     param($uiSender, $uiEventArgs)
     $null = $uiSender
+    if ($sync['Win11ISOUpdatingAdvancedSelector']) { return }
     $checkBox = $uiEventArgs.OriginalSource
     if ($checkBox -isnot [System.Windows.Controls.CheckBox] -or $null -eq $checkBox.DataContext) { return }
 
@@ -592,9 +593,8 @@ $sync.WPFWin11ISOEditionComboBox.Add_SelectionChanged({
     if ($sync['Win11ISOOfflineSession']) {
         Stop-WinUtilOfflineServicingSession -Session $sync['Win11ISOOfflineSession'] -Log { param($message) Write-WinUtilISOLog $message }
         $sync['Win11ISOOfflineSession'] = $null
-        $sync['Win11ISOImageInventory'] = $null
-        Update-WinUtilComponentPolicyUI -SelectedProfileId ([string]$sync['Win11ISOSelectedProfileId'])
     }
+    Clear-WinUtilComponentPolicyAnalysisState
     $sync.WPFWin11ISOModifyButton.IsEnabled = $false
 })
 

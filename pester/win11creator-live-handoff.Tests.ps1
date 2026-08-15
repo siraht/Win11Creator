@@ -103,7 +103,9 @@ Describe 'Win11 Creator live policy handoff' {
 
         $main | Should -Match '(?s)WPFWin11ISOAnalyzeButton.*Invoke-WinUtilISOAnalyze'
         $main | Should -Match 'WPFWin11ISOEditionComboBox\.Add_SelectionChanged'
+        $main | Should -Match '(?s)WPFWin11ISOEditionComboBox\.Add_SelectionChanged.*Clear-WinUtilComponentPolicyAnalysisState'
         $main | Should -Match '(?s)Add_Closing.*Stop-WinUtilOfflineServicingSession'
+        $isoSource | Should -Match '(?s)function Invoke-WinUtilISOAnalyze.*Clear-WinUtilComponentPolicyAnalysisState.*Invoke-WPFRunspace'
         $isoSource | Should -Match '(?s)function Invoke-WinUtilISOCleanAndReset.*Stop-WinUtilOfflineServicingSession'
         $isoSource | Should -Match '(?s)ERROR during edition analysis.*Stop-WinUtilOfflineServicingSession.*Remove-Item'
     }

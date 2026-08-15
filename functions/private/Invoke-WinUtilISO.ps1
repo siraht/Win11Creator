@@ -186,6 +186,7 @@ function Invoke-WinUtilISOAnalyze {
         Stop-WinUtilOfflineServicingSession -Session $sync['Win11ISOOfflineSession'] -Log { param($message) Write-WinUtilISOLog $message }
         $sync['Win11ISOOfflineSession'] = $null
     }
+    Clear-WinUtilComponentPolicyAnalysisState
 
     $workDir = Join-Path ([IO.Path]::GetTempPath()) "WinUtil_Win11ISO_$(Get-Date -Format 'yyyyMMdd_HHmmss')_$(([guid]::NewGuid()).ToString('N').Substring(0, 8))"
     $driveLetter = [string]$sync['Win11ISODriveLetter']
