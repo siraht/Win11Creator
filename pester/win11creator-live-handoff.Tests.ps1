@@ -42,6 +42,7 @@ Describe 'Win11 Creator live policy handoff' {
     BeforeEach {
         $sync.Win11ISOSelectedProfileId = 'default-winutil'
         $sync.Win11ISOManualOverrides = @()
+        $sync.Win11ISOComponentActionOverrides = @{}
         $sync.WPFWin11ISOExpertMode.IsChecked = $false
         $sync.WPFWin11ISOModifyButton.IsEnabled = $false
     }
@@ -105,5 +106,21 @@ Describe 'Win11 Creator live policy handoff' {
         $uiSource | Should -Match '-OfflineSystemSelect \$sync\[''Win11ISOOfflineSession''\]\.OfflineSystemSelect'
         $uiSource | Should -Match '\$result\.ActionBundle\.RegistryActions'
         $uiSource | Should -Match '-ActionBundle \$result\.ActionBundle'
+    }
+
+    It 'carries an exclusive UAC UI choice into the typed live action bundle' {
+        $sync.Win11ISOComponentActionOverrides = @{
+            'uac-prompt-suppression' = 'disable'
+            'uac' = 'keep'
+        }
+
+        $result = Resolve-WinUtilComponentPolicyHandoff
+
+        $result.Safety.IsAllowed | Should -BeTrue
+        $result.ActionBundle.RegistryActions | Where-Object {
+            $_.Name -eq 'EnableLUA' -and [int]$_.Value -eq 1
+        } | Should -HaveCount 1
+        $result.ActionBundle.RegistryActions.Name | Should -Contain 'ConsentPromptBehaviorAdmin'
+        $sync.Win11ISOActionBundle | Should -Be $result.ActionBundle
     }
 }
