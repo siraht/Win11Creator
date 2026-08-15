@@ -29,12 +29,15 @@ This compact record is the project owner's requested source for progress, decisi
 * Treat `gpt-5.6-sol` with low reasoning as the available equivalent of the requested `5.6-sol-light` worker configuration.
 * Do not mark Windows servicing, WPF, ISO, USB, VM, DAW, or developer gates complete from Linux-only evidence.
 * The safety evaluator blocks `forbidden-unless-expert` conflicts, while warnings and likely-breakage remain visible but nonblocking. Expert mode changes permission, not evidence: conflicts remain in the result.
+* Represent `ImageInventory` and resolved plans as versioned plain PowerShell objects because WinUtil compiles source files into one script rather than loading runtime modules/classes.
+* Keep inventory collection injectable for unit tests, but require a live mounted 25H2 inventory before closing discovery tasks. Fixture success is not live servicing proof.
 
 **Lessons and open verification gaps**
 
 * The initial host is Linux and lacks Windows VM tooling. Portable PowerShell `7.6.5` and Pester `5.8.0` are now available for cross-platform compile/unit checks, but Windows-only acceptance still requires a Windows execution environment.
 * The untouched upstream suite is not cross-platform clean: the Linux baseline ran 549 tests with 513 passed, 34 failed, and 2 skipped. Failures were concentrated in Windows-only WPF, registry, service, ACL/path, and driver-injection assumptions; new changes must be compared against this baseline and also run on Windows before release.
 * Generic dependency evaluation can be verified cross-platform, but the accuracy of real Windows dependency declarations still requires catalog review and VM behavior checks.
+* The current resolver deliberately reapplies catalog protection after manual overrides. The Expert-mode path must explicitly coordinate the resolver and safety evaluator before protected removal can be exposed in the UI.
 
 **Progress log**
 
@@ -42,6 +45,7 @@ This compact record is the project owner's requested source for progress, decisi
 * `2026-08-15` — Committed this implementation plan as fork revision `d849084e11a1c3acc8a9a888b660c97e50596108`; the worktree was clean immediately after the commit.
 * `2026-08-15` — Installed checksum-verified portable PowerShell `7.6.5` under `/data/tmp`, installed Pester `5.8.0`, and ran the untouched upstream suite: 549 discovered, 513 passed, 34 failed, 2 skipped, 0 not run.
 * `2026-08-15` — Integrated safety evaluator commits `7f3380c`, `45d4471`, and `dc03ce6`; focused Pester result: 4 passed, 0 failed; `Compile.ps1` completed successfully.
+* `2026-08-15` — Integrated inventory/resolver commits `5f87dd3` and `c87cbef`; focused Pester result: 10 passed, 0 failed; `Compile.ps1` completed successfully. Live inventory and servicing remain unverified.
 
 ---
 
@@ -463,25 +467,30 @@ Manual overrides
 Resolved servicing plan
 ```
 
-* [ ] **Implement exact-match rules first.**
+* [x] **Implement exact-match rules first.**
 
   * **Proof required:** unit tests.
+  * **Proof:** resolver commit `c87cbef`; focused inventory/resolver suite passed 10 tests with 0 failures.
 
-* [ ] **Implement controlled wildcard/version-insensitive matching.**
+* [x] **Implement controlled wildcard/version-insensitive matching.**
 
   * **Proof required:** tests across two package-version strings.
+  * **Proof:** `c87cbef` tests controlled wildcard matching and version normalization without matching a similarly named language package; focused suite passed.
 
-* [ ] **Reject ambiguous matches for high-risk packages.**
+* [x] **Reject ambiguous matches for high-risk packages.**
 
   * **Proof required:** ambiguity test.
+  * **Proof:** planted-negative high-risk two-match test in `c87cbef`; focused suite passed.
 
-* [ ] **Apply protected-component rules after removal rules.**
+* [x] **Apply protected-component rules after removal rules.**
 
   * **Proof required:** conflict test showing protection wins.
+  * **Proof:** NFS broad-removal/manual-override test in `c87cbef` resolves to `Protected`; focused suite passed.
 
-* [ ] **Generate a human-readable dry-run plan before modification.**
+* [x] **Generate a human-readable dry-run plan before modification.**
 
   * **Proof required:** sample generated plan.
+  * **Proof:** `Format-WinUtilOfflineImagePlan` in `c87cbef`; focused test verifies image metadata and a non-destructive `MANUAL` line.
 
 Example:
 
