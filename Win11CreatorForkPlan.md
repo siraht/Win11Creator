@@ -31,6 +31,8 @@ This compact record is the project owner's requested source for progress, decisi
 * The safety evaluator blocks `forbidden-unless-expert` conflicts, while warnings and likely-breakage remain visible but nonblocking. Expert mode changes permission, not evidence: conflicts remain in the result.
 * Represent `ImageInventory` and resolved plans as versioned plain PowerShell objects because WinUtil compiles source files into one script rather than loading runtime modules/classes.
 * Keep inventory collection injectable for unit tests, but require a live mounted 25H2 inventory before closing discovery tasks. Fixture success is not live servicing proof.
+* Keep policy source under `policy/` rather than pretending compile-time embedding already exists. The integration slice must explicitly embed/load these documents for the compiled single-script runtime before UI/engine consumption can be claimed.
+* The initial Lean DAW consumer AppX set is Bing News, Bing Weather, Microsoft Solitaire Collection, and Clipchamp. This remains a catalog choice subject to 25H2 inventory confirmation.
 
 **Lessons and open verification gaps**
 
@@ -38,6 +40,7 @@ This compact record is the project owner's requested source for progress, decisi
 * The untouched upstream suite is not cross-platform clean: the Linux baseline ran 549 tests with 513 passed, 34 failed, and 2 skipped. Failures were concentrated in Windows-only WPF, registry, service, ACL/path, and driver-injection assumptions; new changes must be compared against this baseline and also run on Windows before release.
 * Generic dependency evaluation can be verified cross-platform, but the accuracy of real Windows dependency declarations still requires catalog review and VM behavior checks.
 * The current resolver deliberately reapplies catalog protection after manual overrides. The Expert-mode path must explicitly coordinate the resolver and safety evaluator before protected removal can be exposed in the UI.
+* Isolated policy and engine tests exposed contract mismatches that must be resolved before the shared schema closes: wildcard targets need explicit match semantics, and string conflict references need structured action/severity data consumable by the safety evaluator.
 
 **Progress log**
 
@@ -46,6 +49,7 @@ This compact record is the project owner's requested source for progress, decisi
 * `2026-08-15` — Installed checksum-verified portable PowerShell `7.6.5` under `/data/tmp`, installed Pester `5.8.0`, and ran the untouched upstream suite: 549 discovered, 513 passed, 34 failed, 2 skipped, 0 not run.
 * `2026-08-15` — Integrated safety evaluator commits `7f3380c`, `45d4471`, and `dc03ce6`; focused Pester result: 4 passed, 0 failed; `Compile.ps1` completed successfully.
 * `2026-08-15` — Integrated inventory/resolver commits `5f87dd3` and `c87cbef`; focused Pester result: 10 passed, 0 failed; `Compile.ps1` completed successfully. Live inventory and servicing remain unverified.
+* `2026-08-15` — Integrated policy/catalog commits `619791e` and `ce91b13`; focused Pester result: 8 passed, 0 failed; `Compile.ps1` completed successfully. Shared policy-to-engine/WPF runtime integration remains open.
 
 ---
 
@@ -258,17 +262,19 @@ Recommended shape:
 
 ## A1. Component catalog
 
-* [ ] **Create a version-independent component catalog.**
+* [x] **Create a version-independent component catalog.**
 
   * **Proof required:** committed catalog and parser test.
+  * **Proof:** catalog commit `619791e`, parser/validator commit `ce91b13`; focused policy suite passed 8 tests with 0 failures.
   * **Rationale:** Human concepts such as “Windows AI” should map to whatever packages/features implement that concept on the supplied image.
 
-* [ ] **Represent AppX packages separately from system packages, capabilities, optional features, registry policies, services, and scheduled tasks.**
+* [x] **Represent AppX packages separately from system packages, capabilities, optional features, registry policies, services, and scheduled tasks.**
 
   * **Proof required:** at least one validated catalog entry of each type.
+  * **Proof:** `619791e` contains `appx`, `package`, `capability`, `feature`, `registry`, `service`, and `scheduled-task` targets; `ce91b13` validates and tests the complete kind set.
   * **Rationale:** These mechanisms have different servicing semantics.
 
-* [ ] **Add explanatory metadata for every exposed component.**
+* [x] **Add explanatory metadata for every exposed component.**
 
   * Include:
 
@@ -277,8 +283,9 @@ Recommended shape:
     * consequences;
     * known dependencies;
     * reversibility;
-    * risk level.
+  * risk level.
   * **Proof required:** catalog lint test rejecting exposed entries without these fields.
+  * **Proof:** `ce91b13` validates descriptions, reasons, consequences, reversibility, risk, and target metadata; its planted-invalid-entry test passed.
 
 ---
 
@@ -287,6 +294,7 @@ Recommended shape:
 * [ ] **Implement profiles as data rather than hard-coded PowerShell conditionals.**
 
   * **Proof required:** two profiles producing different resolved plans without changing code.
+  * **Implementation status:** data profiles `default-winutil.json` and `lean-daw.json` exist and parse (`619791e`, `ce91b13`); closure waits for both to pass through the integrated resolver.
 
 * [ ] **Create `Default WinUtil` profile reproducing current behavior as closely as practical.**
 
@@ -323,7 +331,7 @@ selected telemetry / consumer-content behavior
 
   * **Proof required:** resolver test proving NFS features survive even if a broader removal rule could match them.
 
-* [ ] **Protect our development/runtime dependencies.**
+* [x] **Protect our development/runtime dependencies.**
 
   * Desktop App Installer
   * WinGet
@@ -339,8 +347,9 @@ selected telemetry / consumer-content behavior
   * `VirtualMachinePlatform`
   * Hyper-V payloads
   * **Proof required:** automated protected-set test.
+  * **Proof:** Lean DAW policy in `619791e`; protected-set coverage in `ce91b13` passed.
 
-* [ ] **Protect servicing/debug infrastructure.**
+* [x] **Protect servicing/debug infrastructure.**
 
   * WER
   * App Compatibility
@@ -353,6 +362,7 @@ selected telemetry / consumer-content behavior
   * CPU mitigations
   * component store
   * **Proof required:** automated protected-set test.
+  * **Proof:** Lean DAW policy in `619791e`; protected-set coverage in `ce91b13` passed.
 
 ---
 
