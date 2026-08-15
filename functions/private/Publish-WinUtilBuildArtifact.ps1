@@ -47,11 +47,14 @@ function Publish-WinUtilBuildArtifact {
 
     $null = $GetHash
     $outputItem = Get-Item -LiteralPath $OutputPath -ErrorAction Stop
+    if (-not $outputItem.PSIsContainer -and $outputItem.Length -eq 0) {
+        throw "Completed output is empty: $($outputItem.FullName)"
+    }
     if (-not (Test-Path -LiteralPath $ManifestDirectory -PathType Container)) {
         throw "Transaction manifest directory was not found: $ManifestDirectory"
     }
-    if (-not (Test-Path -LiteralPath $BuildLogPath -PathType Leaf)) {
-        throw "Required build log was not found: $BuildLogPath"
+    if (-not (Test-Path -LiteralPath $BuildLogPath -PathType Leaf) -or (Get-Item -LiteralPath $BuildLogPath).Length -eq 0) {
+        throw "Required build log was not found or is empty: $BuildLogPath"
     }
 
     $requiredManifests = [ordered]@{
@@ -130,9 +133,6 @@ function Publish-WinUtilBuildArtifact {
     } catch {
         if (Test-Path -LiteralPath $pendingDirectory) {
             Remove-Item -LiteralPath $pendingDirectory -Recurse -Force -ErrorAction SilentlyContinue
-        }
-        if (Test-Path -LiteralPath $evidenceDirectory) {
-            Remove-Item -LiteralPath $evidenceDirectory -Recurse -Force -ErrorAction SilentlyContinue
         }
         throw "Build artifact publication failed: $_"
     }

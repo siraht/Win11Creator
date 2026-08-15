@@ -87,6 +87,17 @@ Describe 'Durable build artifact publication' {
         Test-Path -LiteralPath (Join-Path $script:testRoot 'Win11.WinUtil-build') | Should -BeFalse
     }
 
+    It 'rejects an empty completed output or build log' {
+        Set-Content -LiteralPath $script:outputPath -Value '' -NoNewline
+        { Publish-WinUtilBuildArtifact -OutputPath $script:outputPath -ManifestDirectory $script:manifestDirectory -BuildLogPath $script:logPath } |
+            Should -Throw '*Completed output is empty*'
+
+        Set-Content -LiteralPath $script:outputPath -Value 'completed iso bytes'
+        Set-Content -LiteralPath $script:logPath -Value '' -NoNewline
+        { Publish-WinUtilBuildArtifact -OutputPath $script:outputPath -ManifestDirectory $script:manifestDirectory -BuildLogPath $script:logPath } |
+            Should -Throw '*build log was not found or is empty*'
+    }
+
     It 'plants the negative that an invalid hash cleans partial publication' {
         $invalidHash = { param($path) $null = $path; 'not-a-sha256' }
 
