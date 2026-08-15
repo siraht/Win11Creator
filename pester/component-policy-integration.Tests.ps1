@@ -76,4 +76,19 @@ Describe 'Component policy plan integration' {
         } | Should -HaveCount 1
         ($result.ResolvedPlan.Decisions | Where-Object Name -eq 'Microsoft-Windows-StartMenuExperienceHost-Package').Action | Should -Be 'Remove'
     }
+
+    It 'regenerates an Expert inventory override with retained protection evidence' {
+        $override = @([pscustomobject]@{ Kind = 'Feature'; Identity = 'ServicesForNFS-ClientOnly'; Action = 'Remove'; Reason = 'Expert selection.' })
+        $result = Resolve-WinUtilComponentPolicyPlan -Inventory $script:inventory -Catalog $script:catalog -Profile $script:leanProfile -ManualOverride $override -ExpertMode
+
+        ($result.ResolvedPlan.Decisions | Where-Object Identity -eq 'ServicesForNFS-ClientOnly').Action | Should -Be 'Remove'
+        $result.Safety.IsAllowed | Should -BeTrue
+        $result.Safety.Conflicts | Where-Object { $_.RelatedComponentId -eq 'ServicesForNFS-ClientOnly' -and -not $_.IsBlocking } | Should -HaveCount 1
+    }
+
+    It 'keeps unknown inventory closed to manual removal' {
+        $override = @([pscustomobject]@{ Kind = 'Package'; Identity = 'Contoso.Future-Package~31bf~amd64~~1.0.0.0'; Action = 'Remove' })
+        { Resolve-WinUtilComponentPolicyPlan -Inventory $script:inventory -Catalog $script:catalog -Profile $script:leanProfile -ManualOverride $override -ExpertMode } |
+            Should -Throw '*remains kept and cannot be overridden*'
+    }
 }

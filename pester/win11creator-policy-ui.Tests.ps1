@@ -148,6 +148,7 @@ Describe 'Win11 Creator advanced package selector safeguards' {
             -SelectedProfileId 'lean-daw' `
             -ImageInventory $script:inventory `
             -ResolvedPlan $script:plan `
+            -Safety ([pscustomobject]@{ IsAllowed = $true }) `
             -RegistryActions @()
 
         $preview.IsReady | Should -BeFalse
@@ -201,7 +202,7 @@ Describe 'Win11 Creator policy XAML bindings' {
         $functionSource | Should -Match '\$sync\.configs\.componentPolicy\.profiles\.PSObject\.Properties\.Value'
         $mainSource | Should -Match 'Set-WinUtilAdvancedPackageOverride'
         $mainSource | Should -Match '\$sync\[''Win11ISOManualOverrides''\]'
-        $mainSource | Should -Match '\$sync\[''Win11ISOResolvedPlan''\]\s*=\s*\$null'
-        $mainSource | Should -Match '\$sync\[''Win11ISORegistryActions''\]\s*=\s*\$null'
+        $mainSource | Should -Match 'Resolve-WinUtilComponentPolicyHandoff'
+        $mainSource | Should -Match 'Win11ISOOfflineSession'
     }
 }

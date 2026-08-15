@@ -204,19 +204,23 @@ function New-WinUtilComponentPolicyHandoff {
         [Parameter(Mandatory)][string]$SelectedProfileId,
         [psobject]$ImageInventory,
         [psobject]$ResolvedPlan,
+        [psobject]$Safety,
         [Parameter()][AllowEmptyCollection()][object[]]$RegistryActions
     )
 
     $hasInventory = $null -ne $ImageInventory
     $hasResolvedPlan = $null -ne $ResolvedPlan
     $hasRegistryActions = $null -ne $RegistryActions
-    $isReady = $hasInventory -and $hasResolvedPlan -and $hasRegistryActions
+    $safetyAllowed = $null -ne $Safety -and $Safety.IsAllowed -eq $true
+    $isReady = $hasInventory -and $hasResolvedPlan -and $hasRegistryActions -and $safetyAllowed
     $status = if (-not $hasInventory) {
         'Preview only: inventory, resolved plan, and registry actions have not been staged.'
     } elseif (-not $hasResolvedPlan) {
         'Inventory loaded; the selected profile has not been resolved for servicing.'
     } elseif (-not $hasRegistryActions) {
         'Resolved component plan staged; registry actions have not been staged.'
+    } elseif (-not $safetyAllowed) {
+        'Blocked: component safety review has unresolved conflicts.'
     } else {
         'Ready: resolved component plan and registry actions are staged for servicing.'
     }
@@ -226,6 +230,7 @@ function New-WinUtilComponentPolicyHandoff {
         HasInventory = $hasInventory
         HasResolvedPlan = $hasResolvedPlan
         HasRegistryActions = $hasRegistryActions
+        SafetyAllowed = $safetyAllowed
         IsReady = $isReady
         Status = $status
     }
@@ -240,8 +245,6 @@ function Update-WinUtilComponentPolicyUI {
         -SelectedProfileId $SelectedProfileId
     $sync.ComponentPolicyPresentation = $model
     $sync['Win11ISOSelectedProfileId'] = $SelectedProfileId
-    $sync['Win11ISOResolvedPlan'] = $null
-    $sync['Win11ISORegistryActions'] = $null
     $sync['Win11ISOAdvancedPackageRows'] = @()
     $handoff = New-WinUtilComponentPolicyHandoff `
         -SelectedProfileId $SelectedProfileId `
@@ -255,6 +258,7 @@ function Update-WinUtilComponentPolicyUI {
         $sync.WPFWin11ISOSummaryRisk.Text = ([string]$model.Summary.Risk).ToUpperInvariant()
         $sync.WPFWin11ISOPolicyHandoffStatus.Text = $handoff.Status
         $sync.WPFWin11ISOPolicyHandoffStatus.Foreground = 'OrangeRed'
+        $sync.WPFWin11ISOModifyButton.IsEnabled = $false
         $sync.WPFWin11ISOAdvancedPackageItems.ItemsSource = @()
 
         $groupControlNames = @{
@@ -268,12 +272,41 @@ function Update-WinUtilComponentPolicyUI {
             $sync[$groupControlNames[$group.Name]].ItemsSource = @($group.Items)
         }
     }
+    if ($sync['Win11ISOImageInventory']) {
+        Resolve-WinUtilComponentPolicyHandoff | Out-Null
+    } else {
+        $sync['Win11ISOResolvedPlan'] = $null
+        $sync['Win11ISORegistryActions'] = $null
+    }
+}
+
+function Resolve-WinUtilComponentPolicyHandoff {
+    $profileId = [string]$sync['Win11ISOSelectedProfileId']
+    $selectedProfile = @($sync.configs.componentPolicy.profiles.PSObject.Properties.Value | Where-Object id -eq $profileId) | Select-Object -First 1
+    if (-not $selectedProfile -and $profileId -eq 'custom') {
+        $selectedProfile = [pscustomobject]@{
+            schemaVersion = 1; documentType = 'component-profile'; id = 'custom'; name = 'Custom'
+            description = 'Catalog defaults with explicit package overrides.'; actions = [pscustomobject]@{}
+        }
+    }
+    if (-not $selectedProfile) { throw "Selected component profile '$profileId' is unavailable." }
+
+    $result = Resolve-WinUtilComponentPolicyPlan `
+        -Inventory $sync['Win11ISOImageInventory'] `
+        -Catalog $sync.configs.componentPolicy.catalog `
+        -ComponentProfile $selectedProfile `
+        -ManualOverride @($sync['Win11ISOManualOverrides']) `
+        -ExpertMode:($sync.WPFWin11ISOExpertMode.IsChecked -eq $true)
+    $registryActions = @()
+    Set-WinUtilAdvancedPackageSelectorUI -ImageInventory $sync['Win11ISOImageInventory'] -ResolvedPlan $result.ResolvedPlan -Safety $result.Safety -RegistryActions $registryActions
+    return $result
 }
 
 function Set-WinUtilAdvancedPackageSelectorUI {
     param (
         [Parameter(Mandatory)][psobject]$ImageInventory,
         [psobject]$ResolvedPlan,
+        [psobject]$Safety,
         [Parameter()][AllowEmptyCollection()][object[]]$RegistryActions
     )
 
@@ -291,6 +324,7 @@ function Set-WinUtilAdvancedPackageSelectorUI {
         -SelectedProfileId ([string]$sync['Win11ISOSelectedProfileId']) `
         -ImageInventory $ImageInventory `
         -ResolvedPlan $ResolvedPlan `
+        -Safety $Safety `
         -RegistryActions $RegistryActions
     $sync['Win11ISOPolicyHandoff'] = $handoff
 
@@ -299,6 +333,7 @@ function Set-WinUtilAdvancedPackageSelectorUI {
         $sync.WPFWin11ISOExpertWarning.Visibility = if ($expertMode) { 'Visible' } else { 'Collapsed' }
         $sync.WPFWin11ISOPolicyHandoffStatus.Text = $handoff.Status
         $sync.WPFWin11ISOPolicyHandoffStatus.Foreground = if ($handoff.IsReady) { 'Green' } else { 'OrangeRed' }
+        $sync.WPFWin11ISOModifyButton.IsEnabled = $handoff.IsReady
     }
 }
 

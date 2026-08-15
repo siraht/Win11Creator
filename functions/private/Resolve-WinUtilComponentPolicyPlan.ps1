@@ -13,6 +13,7 @@ function Resolve-WinUtilComponentPolicyPlan {
         [Parameter(Mandatory)][Alias('Profile')][psobject]$ComponentProfile,
         [System.Collections.IDictionary]$ActionOverrides = @{},
         [psobject]$OfflineSystemSelect,
+        [AllowEmptyCollection()][object[]]$ManualOverride = @(),
         [switch]$ExpertMode
     )
 
@@ -146,14 +147,44 @@ function Resolve-WinUtilComponentPolicyPlan {
         -ComponentDeclarations @($safetyDeclarations) `
         -SelectedActions $selectedActions `
         -ExpertMode:$ExpertMode
-    $allConflicts = @($evaluatedSafety.Conflicts) + @($protectedOverrideConflicts) + @($operationConflicts)
+    $baseResolvedPlan = Resolve-WinUtilOfflineImagePolicy -Inventory $Inventory -Policy @($resolverRules)
+    $inventoryOverrideConflicts = [System.Collections.Generic.List[object]]::new()
+    foreach ($override in $ManualOverride) {
+        $baseDecision = @($baseResolvedPlan.Decisions | Where-Object {
+            [string]$_.Kind -eq [string]$override.Kind -and [string]$_.Identity -eq [string]$override.Identity
+        }) | Select-Object -First 1
+        if (-not $baseDecision) { throw "Manual override target '$($override.Identity)' is not present in the resolved inventory." }
+        if ([string]$baseDecision.Action -eq 'Manual' -and [string]::IsNullOrWhiteSpace([string]$baseDecision.PolicyId)) {
+            throw "Unknown inventory item '$($override.Identity)' remains kept and cannot be overridden."
+        }
+        if ([string]$baseDecision.Action -eq 'Protected' -and [string]$override.Action -ne 'Protected') {
+            $inventoryOverrideConflicts.Add([pscustomobject]@{
+                ComponentId = [string]$baseDecision.PolicyId
+                RelatedComponentId = [string]$override.Identity
+                Severity = 'forbidden-unless-expert'
+                Reason = "Protected inventory item '$($override.Identity)' has an explicit '$($override.Action)' override."
+                IsBlocking = -not $ExpertMode.IsPresent
+            })
+        }
+    }
+
+    $allConflicts = @($evaluatedSafety.Conflicts) + @($protectedOverrideConflicts) +
+        @($inventoryOverrideConflicts) + @($operationConflicts)
     $safety = [pscustomobject]@{
         IsAllowed = @($allConflicts | Where-Object IsBlocking).Count -eq 0
         ExpertMode = $ExpertMode.IsPresent
         ProtectedComponentIds = @($evaluatedSafety.ProtectedComponentIds)
         Conflicts = @($allConflicts)
     }
-    $resolvedPlan = Resolve-WinUtilOfflineImagePolicy -Inventory $Inventory -Policy @($resolverRules)
+    $resolvedPlan = Resolve-WinUtilOfflineImagePolicy -Inventory $Inventory -Policy @($resolverRules) -ManualOverride $ManualOverride
+    foreach ($override in $ManualOverride) {
+        $decision = @($resolvedPlan.Decisions | Where-Object {
+            [string]$_.Kind -eq [string]$override.Kind -and [string]$_.Identity -eq [string]$override.Identity
+        }) | Select-Object -First 1
+        $decision.Action = [string]$override.Action
+        $decision.PolicyId = 'manual-override'
+        $decision.Reason = if ($override.Reason) { [string]$override.Reason } else { 'Manual override.' }
+    }
     $resolvedPlan | Add-Member -NotePropertyName IsAllowed -NotePropertyValue $safety.IsAllowed
     $resolvedPlan | Add-Member -NotePropertyName Safety -NotePropertyValue $safety
     $deduplicatedRegistryActions = @($registryActions | Group-Object {
