@@ -309,6 +309,123 @@ internal static class WinUtilWerCrash_$token {
                 $probeResult
             }
         }
+        DeveloperFunctional = {
+            $probeRoot = Join-Path ([IO.Path]::GetTempPath()) "WinUtilDeveloperAcceptance_$([Guid]::NewGuid().ToString('N'))"
+            $probeResults = [System.Collections.Generic.List[object]]::new()
+            $cleanupSucceeded = $false
+            $cleanupEvidence = 'Cleanup was not attempted.'
+
+            function Invoke-DeveloperProcess {
+                param (
+                    [Parameter(Mandatory)][string]$FilePath,
+                    [string[]]$ArgumentList,
+                    [Parameter(Mandatory)][string]$WorkingDirectory,
+                    [Parameter(Mandatory)][string]$Label,
+                    [int]$TimeoutSeconds = 45
+                )
+                $stdoutPath = Join-Path $probeRoot "$Label.stdout.txt"
+                $stderrPath = Join-Path $probeRoot "$Label.stderr.txt"
+                $escapedArguments = @($ArgumentList | ForEach-Object {
+                    if ($_ -match '[\s"]') { '"' + ($_ -replace '(\\*)"', '$1$1\"' -replace '(\\+)$', '$1$1') + '"' } else { $_ }
+                }) -join ' '
+                $process = Start-Process -FilePath $FilePath -ArgumentList $escapedArguments -WorkingDirectory $WorkingDirectory `
+                    -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath -WindowStyle Hidden -PassThru -ErrorAction Stop
+                if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
+                    $process.Kill()
+                    $process.WaitForExit()
+                    throw "$Label timed out after $TimeoutSeconds seconds."
+                }
+                $stdout = if (Test-Path -LiteralPath $stdoutPath) { (Get-Content -LiteralPath $stdoutPath -Raw -ErrorAction Stop).Trim() } else { '' }
+                $stderr = if (Test-Path -LiteralPath $stderrPath) { (Get-Content -LiteralPath $stderrPath -Raw -ErrorAction Stop).Trim() } else { '' }
+                if ($process.ExitCode -ne 0) { throw "$Label exited $($process.ExitCode): $stderr" }
+                [pscustomobject]@{ Stdout = $stdout; Stderr = $stderr; ExitCode = $process.ExitCode }
+            }
+            function Add-DeveloperProbeResult {
+                param ([string]$Id, [scriptblock]$Operation)
+                try {
+                    $evidence = & $Operation
+                    $probeResults.Add([pscustomobject]@{ Id = $Id; Success = $true; Evidence = [string]$evidence })
+                } catch {
+                    $probeResults.Add([pscustomobject]@{ Id = $Id; Success = $false; Evidence = $_.Exception.Message })
+                }
+            }
+
+            try {
+                New-Item -Path $probeRoot -ItemType Directory -ErrorAction Stop | Out-Null
+                Add-DeveloperProbeResult 'developer.git' {
+                    $gitRoot = Join-Path $probeRoot 'git'
+                    New-Item -Path $gitRoot -ItemType Directory -ErrorAction Stop | Out-Null
+                    Invoke-DeveloperProcess git.exe @('init', '--quiet') $gitRoot 'git-init' | Out-Null
+                    Invoke-DeveloperProcess git.exe @('config', 'user.name', 'WinUtil Acceptance') $gitRoot 'git-config-name' | Out-Null
+                    Invoke-DeveloperProcess git.exe @('config', 'user.email', 'acceptance@invalid.example') $gitRoot 'git-config-email' | Out-Null
+                    Set-Content -LiteralPath (Join-Path $gitRoot 'probe.txt') -Value 'winutil-git-smoke' -NoNewline -Encoding ascii
+                    Invoke-DeveloperProcess git.exe @('add', '--', 'probe.txt') $gitRoot 'git-add' | Out-Null
+                    Invoke-DeveloperProcess git.exe @('commit', '--quiet', '-m', 'acceptance smoke') $gitRoot 'git-commit' | Out-Null
+                    $head = (Invoke-DeveloperProcess git.exe @('rev-parse', 'HEAD') $gitRoot 'git-head').Stdout
+                    $status = (Invoke-DeveloperProcess git.exe @('status', '--porcelain') $gitRoot 'git-status').Stdout
+                    if ($head -notmatch '^[0-9a-f]{40}$' -or $status -ne '') { throw "Git repository validation failed (head='$head', status='$status')." }
+                    "Git repository initialized and committed; head=$head; status=clean"
+                }
+                Add-DeveloperProbeResult 'developer.powershell' {
+                    $scriptPath = Join-Path $probeRoot 'powershell-smoke.ps1'
+                    Set-Content -LiteralPath $scriptPath -Value "'WINUTIL_POWERSHELL_OK'" -NoNewline -Encoding ascii
+                    $output = (Invoke-DeveloperProcess pwsh.exe @('-NoProfile', '-NonInteractive', '-File', $scriptPath) $probeRoot 'powershell').Stdout
+                    if ($output -cne 'WINUTIL_POWERSHELL_OK') { throw "PowerShell returned unexpected output '$output'." }
+                    'PowerShell script output=WINUTIL_POWERSHELL_OK'
+                }
+                Add-DeveloperProbeResult 'developer.node' {
+                    $scriptPath = Join-Path $probeRoot 'node-smoke.js'
+                    Set-Content -LiteralPath $scriptPath -Value "process.stdout.write('WINUTIL_NODE_OK')" -NoNewline -Encoding ascii
+                    $syntax = Invoke-DeveloperProcess node.exe @('--check', $scriptPath) $probeRoot 'node-check'
+                    if ($syntax.Stdout -ne '' -or $syntax.Stderr -ne '') { throw 'Node syntax check returned unexpected output.' }
+                    $output = (Invoke-DeveloperProcess node.exe @($scriptPath) $probeRoot 'node-run').Stdout
+                    if ($output -cne 'WINUTIL_NODE_OK') { throw "Node returned unexpected output '$output'." }
+                    'Node syntax check and execution output=WINUTIL_NODE_OK'
+                }
+                Add-DeveloperProbeResult 'developer.bun' {
+                    $sourcePath = Join-Path $probeRoot 'bun-source.js'
+                    $bundlePath = Join-Path $probeRoot 'bun-bundle.js'
+                    Set-Content -LiteralPath $sourcePath -Value "console.log('WINUTIL_BUN_OK')" -NoNewline -Encoding ascii
+                    Invoke-DeveloperProcess bun.exe @('build', $sourcePath, '--outfile', $bundlePath) $probeRoot 'bun-build' | Out-Null
+                    if (-not (Test-Path -LiteralPath $bundlePath -PathType Leaf) -or (Get-Item -LiteralPath $bundlePath).Length -eq 0) { throw 'Bun produced no nonempty bundle.' }
+                    $output = (Invoke-DeveloperProcess bun.exe @($bundlePath) $probeRoot 'bun-run').Stdout
+                    if ($output -cne 'WINUTIL_BUN_OK') { throw "Bun returned unexpected output '$output'." }
+                    'Bun built and executed bundle; output=WINUTIL_BUN_OK'
+                }
+                Add-DeveloperProbeResult 'developer.python' {
+                    $venvRoot = Join-Path $probeRoot 'python-venv'
+                    Invoke-DeveloperProcess python.exe @('-m', 'venv', $venvRoot) $probeRoot 'python-venv' 90 | Out-Null
+                    $venvPython = Join-Path $venvRoot 'Scripts\python.exe'
+                    if (-not (Test-Path -LiteralPath $venvPython -PathType Leaf)) { throw 'Python venv interpreter was not created.' }
+                    $output = (Invoke-DeveloperProcess $venvPython @('-c', "print('WINUTIL_PYTHON_OK')") $probeRoot 'python-run').Stdout
+                    if ($output -cne 'WINUTIL_PYTHON_OK') { throw "Python returned unexpected output '$output'." }
+                    'Python venv created and executed; output=WINUTIL_PYTHON_OK'
+                }
+                $rustOperation = {
+                    $cargoRoot = Join-Path $probeRoot 'cargo'
+                    $sourceRoot = Join-Path $cargoRoot 'src'
+                    New-Item -Path $sourceRoot -ItemType Directory -Force -ErrorAction Stop | Out-Null
+                    Set-Content -LiteralPath (Join-Path $cargoRoot 'Cargo.toml') -Value "[package]`nname = `"winutil_acceptance`"`nversion = `"0.1.0`"`nedition = `"2021`"" -Encoding ascii
+                    Set-Content -LiteralPath (Join-Path $sourceRoot 'main.rs') -Value 'fn main() { println!("WINUTIL_RUST_OK"); }' -Encoding ascii
+                    $output = (Invoke-DeveloperProcess cargo.exe @('run', '--quiet', '--manifest-path', (Join-Path $cargoRoot 'Cargo.toml')) $probeRoot 'cargo-run' 120).Stdout
+                    if ($output -cne 'WINUTIL_RUST_OK') { throw "Cargo-built Rust program returned unexpected output '$output'." }
+                    'Cargo compiled and ran Rust binary; output=WINUTIL_RUST_OK'
+                }
+                Add-DeveloperProbeResult 'developer.rust' $rustOperation
+                $rustResult = $probeResults | Where-Object Id -eq 'developer.rust'
+                $probeResults.Add([pscustomobject]@{ Id = 'developer.cargo'; Success = [bool]$rustResult.Success; Evidence = [string]$rustResult.Evidence })
+            } finally {
+                try {
+                    if (Test-Path -LiteralPath $probeRoot) { Remove-Item -LiteralPath $probeRoot -Recurse -Force -ErrorAction Stop }
+                    $cleanupSucceeded = -not (Test-Path -LiteralPath $probeRoot)
+                    $cleanupEvidence = if ($cleanupSucceeded) { "Removed isolated developer probe root '$probeRoot'." } else { "Developer probe root remains at '$probeRoot'." }
+                } catch {
+                    $cleanupSucceeded = $false
+                    $cleanupEvidence = "Failed to remove developer probe root '$probeRoot': $($_.Exception.Message)"
+                }
+            }
+            [pscustomobject]@{ Results = @($probeResults); CleanupSucceeded = $cleanupSucceeded; Evidence = $cleanupEvidence }
+        }
     }
 }
 
@@ -328,7 +445,7 @@ function Invoke-WinUtilInstalledAcceptance {
 
     if (-not $ProbeProvider) { $ProbeProvider = Get-WinUtilInstalledProbeProvider }
     $requiredBoundaries = @('Command', 'Registry', 'Appx', 'Service', 'Feature', 'Package', 'SystemApp', 'Task', 'File', 'Registration', 'WerCrash', 'NfsFunctional')
-    if ($Depth -eq 'Release') { $requiredBoundaries += 'UpdateInstall' }
+    if ($Depth -eq 'Release') { $requiredBoundaries += @('UpdateInstall', 'DeveloperFunctional') }
     foreach ($boundary in $requiredBoundaries) {
         if (-not $ProbeProvider.ContainsKey($boundary) -or $ProbeProvider[$boundary] -isnot [scriptblock]) {
             throw "ProbeProvider boundary '$boundary' must be a scriptblock."
@@ -558,16 +675,50 @@ function Invoke-WinUtilInstalledAcceptance {
     } catch { Add-AcceptanceResult 'protected.task.onesettings-refreshcache' 'Protected' $true 'Fail' $_.Exception.Message }
     Test-Command 'protected.mitigations' 'Protected' $true 'powershell.exe' @('-NoProfile', '-NonInteractive', '-Command', 'Get-ProcessMitigation -System')
 
-    $developerCommands = [ordered]@{
+    $generalDeveloperCommands = [ordered]@{
         'developer.git' = @('git.exe', '--version'); 'developer.powershell' = @('pwsh.exe', '--version')
         'developer.node' = @('node.exe', '--version'); 'developer.bun' = @('bun.exe', '--version')
         'developer.python' = @('python.exe', '--version'); 'developer.rust' = @('rustc.exe', '--version')
-        'developer.cargo' = @('cargo.exe', '--version'); 'developer.buildtools' = @('where.exe', 'MSBuild.exe')
+        'developer.cargo' = @('cargo.exe', '--version')
+    }
+    if ($Depth -eq 'Release') {
+        try {
+            $functionalOutput = @(& $ProbeProvider.DeveloperFunctional)
+            if ($functionalOutput.Count -ne 1) { throw "DeveloperFunctional boundary returned $($functionalOutput.Count) results; expected exactly one envelope." }
+            $functional = $functionalOutput[0]
+            if ($null -eq $functional -or $functional.CleanupSucceeded -isnot [bool] -or -not $functional.CleanupSucceeded) {
+                throw "DeveloperFunctional cleanup was not proven: $([string]$functional.Evidence)"
+            }
+            $expectedDeveloperIds = @($generalDeveloperCommands.Keys)
+            $actualDeveloperResults = @($functional.Results)
+            $actualIds = @($actualDeveloperResults | ForEach-Object { [string]$_.Id })
+            if ($actualDeveloperResults.Count -ne $expectedDeveloperIds.Count -or @($actualIds | Select-Object -Unique).Count -ne $expectedDeveloperIds.Count -or
+                @($expectedDeveloperIds | Where-Object { $_ -notin $actualIds }).Count -gt 0 -or @($actualIds | Where-Object { $_ -notin $expectedDeveloperIds }).Count -gt 0) {
+                throw "DeveloperFunctional must return each expected result exactly once: $($expectedDeveloperIds -join ', ')."
+            }
+            foreach ($developerId in $expectedDeveloperIds) {
+                $probe = $actualDeveloperResults | Where-Object Id -eq $developerId
+                if ($probe.Success -isnot [bool] -or [string]::IsNullOrWhiteSpace([string]$probe.Evidence)) {
+                    Add-AcceptanceResult $developerId 'Developer' $true 'Fail' 'DeveloperFunctional result must contain Boolean Success and nonempty Evidence.'
+                } else {
+                    Add-AcceptanceResult $developerId 'Developer' $true $(if ($probe.Success) { 'Pass' } else { 'Fail' }) ([string]$probe.Evidence)
+                }
+            }
+        } catch {
+            foreach ($developerId in $generalDeveloperCommands.Keys) { Add-AcceptanceResult $developerId 'Developer' $true 'Fail' $_.Exception.Message }
+        }
+    } else {
+        foreach ($entry in $generalDeveloperCommands.GetEnumerator()) {
+            Test-Command $entry.Key 'Developer' $false $entry.Value[0] @($entry.Value | Select-Object -Skip 1)
+        }
+    }
+    $specializedDeveloperCommands = [ordered]@{
+        'developer.buildtools' = @('where.exe', 'MSBuild.exe')
         'developer.cuda' = @('nvidia-smi.exe', '--query-gpu=name,driver_version', '--format=csv,noheader')
         'developer.onnx' = @('python.exe', '-c', 'import onnxruntime; print(onnxruntime.__version__)')
         'developer.directml' = @('python.exe', '-c', 'import onnxruntime as o; assert "DmlExecutionProvider" in o.get_available_providers()')
     }
-    foreach ($entry in $developerCommands.GetEnumerator()) {
+    foreach ($entry in $specializedDeveloperCommands.GetEnumerator()) {
         Test-Command $entry.Key 'Developer' ($Depth -eq 'Release') $entry.Value[0] @($entry.Value | Select-Object -Skip 1)
     }
 
@@ -597,7 +748,7 @@ function Invoke-WinUtilInstalledAcceptance {
     $failedRequired = @($results | Where-Object { $_.Required -and $_.Status -ne 'Pass' })
     $document = [pscustomobject][ordered]@{
         SchemaVersion = '1.0'
-        HarnessVersion = '1.7.0'
+        HarnessVersion = '1.8.0'
         TimestampUtc = [DateTime]::UtcNow.ToString('o')
         ExpectedState = $ExpectedState
         Depth = $Depth
