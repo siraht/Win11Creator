@@ -104,6 +104,8 @@ Describe 'Component policy plan integration' {
                 [pscustomobject]@{ Kind = 'AppX'; Name = 'Microsoft.BingNews'; Identity = 'Microsoft.BingNews_1.0_neutral_~_8wekyb3d8bbwe'; State = 'Provisioned' }
                 [pscustomobject]@{ Kind = 'AppX'; Name = 'Microsoft.XboxApp'; Identity = 'Microsoft.XboxApp_1.0_neutral_~_8wekyb3d8bbwe'; State = 'Provisioned' }
                 [pscustomobject]@{ Kind = 'AppX'; Name = 'Microsoft.OneDriveSync'; Identity = 'Microsoft.OneDriveSync_1.0_neutral_~_8wekyb3d8bbwe'; State = 'Provisioned' }
+                [pscustomobject]@{ Kind = 'AppX'; Name = 'MicrosoftWindows.Client.CoreAI'; Identity = 'MicrosoftWindows.Client.CoreAI_1000.26100.6584.0_x64__cw5n1h2txyewy'; State = 'Provisioned' }
+                [pscustomobject]@{ Kind = 'AppX'; Name = 'Contoso.MicrosoftWindows.Client.CoreAI.Tools'; Identity = 'Contoso.MicrosoftWindows.Client.CoreAI.Tools_1.0.0.0_x64__test'; State = 'Provisioned' }
                 [pscustomobject]@{ Kind = 'Package'; Name = 'Microsoft-Windows-Client-AIX-Package'; Identity = 'Microsoft-Windows-Client-AIX-Package~31bf~amd64~~10.0.26200.1'; State = 'Installed' }
                 [pscustomobject]@{ Kind = 'Package'; Name = 'Microsoft-Windows-OneDrive-Package'; Identity = 'Microsoft-Windows-OneDrive-Package~31bf~amd64~~10.0.26200.1'; State = 'Installed' }
                 [pscustomobject]@{ Kind = 'Package'; Name = 'Microsoft-Windows-WebView2Runtime-Package'; Identity = 'Microsoft-Windows-WebView2Runtime-Package~31bf~amd64~~10.0.26200.1'; State = 'Installed' }
@@ -115,6 +117,10 @@ Describe 'Component policy plan integration' {
         foreach ($policyId in 'widgets-webexperience', 'copilot', 'feedback-hub', 'consumer-appx', 'xbox-gaming', 'windows-ai', 'onedrive') {
             $result.ResolvedPlan.Decisions | Where-Object PolicyId -eq $policyId | ForEach-Object { $_.Action | Should -Be 'Remove' }
         }
+        $coreAi = $result.ResolvedPlan.Decisions | Where-Object Identity -eq 'MicrosoftWindows.Client.CoreAI_1000.26100.6584.0_x64__cw5n1h2txyewy'
+        $coreAi.PolicyId | Should -Be 'windows-ai'
+        $coreAi.Action | Should -Be 'Remove'
+        ($result.ResolvedPlan.Decisions | Where-Object Identity -eq 'Contoso.MicrosoftWindows.Client.CoreAI.Tools_1.0.0.0_x64__test').Action | Should -Be 'Manual'
         ($result.ResolvedPlan.Decisions | Where-Object PolicyId -eq 'webview2').Action | Should -Be 'Protected'
         ($result.ResolvedPlan.Decisions | Where-Object PolicyId -eq 'client-cbs').Action | Should -Be 'Protected'
     }

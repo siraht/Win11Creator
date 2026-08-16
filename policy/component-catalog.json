@@ -369,6 +369,11 @@
       "risk": "expert",
       "targets": [
         {
+          "kind": "appx",
+          "match": "MicrosoftWindows.Client.CoreAI",
+          "matchType": "exact"
+        },
+        {
           "kind": "package",
           "match": "Microsoft-Windows-Client-CoreAI-*",
           "matchType": "wildcard",
