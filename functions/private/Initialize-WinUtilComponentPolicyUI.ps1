@@ -665,4 +665,5 @@ function Initialize-WinUtilComponentPolicyUI {
         $sync.WPFWin11ISOProfileComboBox.SelectedValue = $model.SelectedProfileId
     }
     Update-WinUtilComponentPolicyUI -SelectedProfileId $model.SelectedProfileId
+    Initialize-WinUtilComponentProfileComparisonUI
 }

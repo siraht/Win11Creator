@@ -601,6 +601,10 @@ $sync["WPFWin11ISOAnalyzeButton"].Add_Click({
     Invoke-WinUtilISOAnalyze
 })
 
+$sync.WPFWin11ISOCompareProfilesButton.Add_Click({
+    Update-WinUtilComponentProfileComparisonUI
+})
+
 $sync["WPFWin11ISOModifyButton"].Add_Click({
     Invoke-WinUtilISOModify
 })

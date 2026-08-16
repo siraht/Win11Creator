@@ -1828,6 +1828,27 @@
                                                                Foreground="{DynamicResource MainForegroundColor}"/>
                                                 </Grid>
                                             </DataTemplate>
+                                            <DataTemplate x:Key="Win11ISOProfileDiffItemTemplate">
+                                                <Grid Margin="4,4">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="2*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="2*"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock Grid.Column="0" Text="{Binding Name}" TextWrapping="Wrap"
+                                                               ToolTip="{Binding Id}" Foreground="{DynamicResource MainForegroundColor}"/>
+                                                    <TextBlock Grid.Column="1" Text="{Binding LeftAction}" Margin="12,0"
+                                                               FontWeight="SemiBold" Foreground="{DynamicResource MainForegroundColor}"/>
+                                                    <TextBlock Grid.Column="2" Text="{Binding RightAction}" Margin="12,0"
+                                                               FontWeight="SemiBold" Foreground="{DynamicResource MainForegroundColor}"/>
+                                                    <TextBlock Grid.Column="3" Text="{Binding Risk}" Margin="12,0"
+                                                               ToolTip="{Binding Consequences}" Foreground="{DynamicResource MainForegroundColor}"/>
+                                                    <TextBlock Grid.Column="4" Text="{Binding Rationale}" TextWrapping="Wrap"
+                                                               Foreground="{DynamicResource MainForegroundColor}"/>
+                                                </Grid>
+                                            </DataTemplate>
                                         </StackPanel.Resources>
 
                                         <TextBlock Text="Configuration profile" FontWeight="Bold"
@@ -1840,6 +1861,50 @@
                                             <Button Name="WPFWin11ISOPresetExportButton" Content="Export Preset..."
                                                     Width="Auto" Padding="10,3"/>
                                         </StackPanel>
+                                        <Expander Header="Compare profiles" Margin="0,0,0,10"
+                                                  AutomationProperties.Name="Compare component profiles">
+                                            <StackPanel Margin="4,6,4,4">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <StackPanel Margin="0,0,12,0">
+                                                        <Label Content="First profile" Target="{Binding ElementName=WPFWin11ISOCompareLeftProfile}"
+                                                               Foreground="{DynamicResource MainForegroundColor}"/>
+                                                        <ComboBox Name="WPFWin11ISOCompareLeftProfile" MinWidth="190"
+                                                                  AutomationProperties.Name="First profile to compare"/>
+                                                    </StackPanel>
+                                                    <StackPanel Margin="0,0,12,0">
+                                                        <Label Content="Second profile" Target="{Binding ElementName=WPFWin11ISOCompareRightProfile}"
+                                                               Foreground="{DynamicResource MainForegroundColor}"/>
+                                                        <ComboBox Name="WPFWin11ISOCompareRightProfile" MinWidth="190"
+                                                                  AutomationProperties.Name="Second profile to compare"/>
+                                                    </StackPanel>
+                                                    <Button Name="WPFWin11ISOCompareProfilesButton" Content="Compare" Width="Auto"
+                                                            Padding="10,3" VerticalAlignment="Bottom" Margin="0,0,0,1"
+                                                            AutomationProperties.HelpText="Show component action differences between the selected profiles."/>
+                                                </StackPanel>
+                                                <TextBlock Name="WPFWin11ISOProfileDiffStatus" Margin="0,8,0,4" TextWrapping="Wrap"
+                                                           AutomationProperties.LiveSetting="Polite"
+                                                           Foreground="{DynamicResource MainForegroundColor}"/>
+                                                <Grid Margin="4,2" AutomationProperties.Name="Profile comparison column headings">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="2*"/>
+                                                        <ColumnDefinition Width="Auto" MinWidth="90"/>
+                                                        <ColumnDefinition Width="Auto" MinWidth="90"/>
+                                                        <ColumnDefinition Width="Auto" MinWidth="70"/>
+                                                        <ColumnDefinition Width="2*"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock Grid.Column="0" Text="Component" FontWeight="Bold" Foreground="{DynamicResource MainForegroundColor}"/>
+                                                    <TextBlock Name="WPFWin11ISOProfileDiffLeftHeader" Grid.Column="1" Text="First action" Margin="12,0" FontWeight="Bold" Foreground="{DynamicResource MainForegroundColor}"/>
+                                                    <TextBlock Name="WPFWin11ISOProfileDiffRightHeader" Grid.Column="2" Text="Second action" Margin="12,0" FontWeight="Bold" Foreground="{DynamicResource MainForegroundColor}"/>
+                                                    <TextBlock Grid.Column="3" Text="Risk" Margin="12,0" FontWeight="Bold" Foreground="{DynamicResource MainForegroundColor}"/>
+                                                    <TextBlock Grid.Column="4" Text="Rationale" FontWeight="Bold" Foreground="{DynamicResource MainForegroundColor}"/>
+                                                </Grid>
+                                                <ScrollViewer MaxHeight="260" VerticalScrollBarVisibility="Auto"
+                                                              AutomationProperties.Name="Changed component actions">
+                                                    <ItemsControl Name="WPFWin11ISOProfileDiffItems"
+                                                                  ItemTemplate="{StaticResource Win11ISOProfileDiffItemTemplate}"/>
+                                                </ScrollViewer>
+                                            </StackPanel>
+                                        </Expander>
                                         <TextBlock Name="WPFWin11ISOPolicyHandoffStatus" Margin="0,0,0,10" TextWrapping="Wrap"
                                                    Foreground="OrangeRed"
                                                    Text="Preview only: inventory, resolved plan, and registry actions have not been staged."/>
