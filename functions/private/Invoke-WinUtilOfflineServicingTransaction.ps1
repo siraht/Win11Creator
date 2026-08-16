@@ -228,71 +228,7 @@ function Invoke-WinUtilOfflineServicingTransaction {
         if ([string]$operation.Operation -ne 'RemoveDefenderOffline' -or [string]$operation.SourceComponentId -ne 'defender') {
             throw 'Security operation must be the exact RemoveDefenderOffline contract sourced by defender.'
         }
-        $targets = @($operation.Targets)
-        if ($targets.Count -eq 0) { throw 'RemoveDefenderOffline requires at least one resolved Defender feature or package target.' }
-        $seen = @{}
-        foreach ($target in $targets) {
-            $kind = [string]$target.Kind
-            $identity = [string]$target.Identity
-            if ($kind -notin @('Feature', 'Package') -or [string]::IsNullOrWhiteSpace($identity)) {
-                throw 'RemoveDefenderOffline accepts only non-empty Feature or Package targets.'
-            }
-            $key = "$kind|$identity".ToUpperInvariant()
-            if ($seen.ContainsKey($key)) { throw "RemoveDefenderOffline contains duplicate target '$kind|$identity'." }
-            $seen[$key] = $true
-            $decision = @($Plan.Decisions | Where-Object {
-                [string]$_.Kind -eq $kind -and [string]$_.Identity -eq $identity
-            })
-            if ($decision.Count -ne 1 -or [string]$decision[0].PolicyId -ne 'defender' -or [string]$decision[0].Action -ne 'Remove') {
-                throw "RemoveDefenderOffline target '$kind|$identity' is not one exact resolved Defender removal decision."
-            }
-            if ($identity -match '(?i)Windows[-.]?Update|ServicingStack|CBS-Package') {
-                throw "RemoveDefenderOffline target '$identity' overlaps protected servicing or Windows Update infrastructure."
-            }
-        }
-        if ($plannedDefenderTargets.Count -ne $targets.Count) {
-            throw 'RemoveDefenderOffline target evidence does not cover every resolved Defender feature/package decision.'
-        }
-        return $targets
-    }
-
-    function Invoke-WinUtilDefenderSecurityOperation {
-        param ([object[]]$Targets)
-        foreach ($target in $Targets) {
-            if ([string]$target.Kind -eq 'Feature') {
-                Disable-WindowsOptionalFeature -Path $MountPath -FeatureName ([string]$target.Identity) -Remove -ErrorAction Stop | Out-Null
-            } else {
-                Remove-WindowsPackage -Path $MountPath -PackageName ([string]$target.Identity) -ErrorAction Stop | Out-Null
-            }
-        }
-    }
-
-    function Assert-WinUtilDefenderBeforeState {
-        param ([object[]]$Targets, $BeforeInventory)
-        foreach ($target in $Targets) {
-            $present = @($BeforeInventory.Items | Where-Object {
-                [string]$_.Kind -eq [string]$target.Kind -and [string]$_.Identity -eq [string]$target.Identity
-            })
-            $requiredState = if ([string]$target.Kind -eq 'Feature') { 'Enabled' } else { 'Installed' }
-            if ($present.Count -ne 1 -or [string]$present[0].State -ne $requiredState) {
-                throw "RemoveDefenderOffline precondition failed: target '$($target.Kind)|$($target.Identity)' is not uniquely present in state '$requiredState'."
-            }
-        }
-    }
-
-    function Assert-WinUtilDefenderAfterState {
-        param ([object[]]$Targets, $AfterInventory)
-        foreach ($target in $Targets) {
-            $remaining = @($AfterInventory.Items | Where-Object {
-                [string]$_.Kind -eq [string]$target.Kind -and [string]$_.Identity -eq [string]$target.Identity
-            })
-            if ([string]$target.Kind -eq 'Package' -and $remaining.Count -ne 0) {
-                throw "RemoveDefenderOffline verification failed: package '$($target.Identity)' remains in the image."
-            }
-            if ([string]$target.Kind -eq 'Feature' -and ($remaining.Count -ne 1 -or [string]$remaining[0].State -ne 'DisabledWithPayloadRemoved')) {
-                throw "RemoveDefenderOffline verification failed: feature '$($target.Identity)' is not DisabledWithPayloadRemoved."
-            }
-        }
+        throw 'RemoveDefenderOffline has no validated Microsoft-supported offline Defender antivirus core target for Windows 11 client 25H2; default definitions and Sense/MDE payloads are not the antivirus core.'
     }
 
     function Assert-WinUtilGenericBeforeState {
@@ -373,7 +309,7 @@ function Invoke-WinUtilOfflineServicingTransaction {
         }
     }
     if ($DriverDirectory -and -not (Test-Path -LiteralPath $DriverDirectory)) { throw "Driver directory was not found: $DriverDirectory" }
-    $defenderTargets = @(Assert-WinUtilDefenderSecurityOperation -Operations $SecurityOperation -Plan $ResolvedPlan)
+    Assert-WinUtilDefenderSecurityOperation -Operations $SecurityOperation -Plan $ResolvedPlan
 
     $manifestFullPath = [System.IO.Path]::GetFullPath($ManifestDirectory)
     $manifestParent = Split-Path $manifestFullPath -Parent
@@ -410,7 +346,6 @@ function Invoke-WinUtilOfflineServicingTransaction {
             $mounted = $true
             $before = $startedSession.Inventory
         }
-        Assert-WinUtilDefenderBeforeState -Targets $defenderTargets -BeforeInventory $before
         Assert-WinUtilGenericBeforeState -Plan $ResolvedPlan -BeforeInventory $before
         $beforeManifest = [pscustomobject][ordered]@{
             SchemaVersion = '1.0'; ManifestType = 'ImageInventoryBefore'; Source = $before.Source; Items = @($before.Items)
@@ -451,8 +386,6 @@ function Invoke-WinUtilOfflineServicingTransaction {
             }
         }
 
-        Invoke-WinUtilDefenderSecurityOperation -Targets $defenderTargets
-
         Invoke-WinUtilOfflineRegistryActionBatch -Actions $RegistryAction
         if ($DriverDirectory) {
             Invoke-WinUtilOfflineDism -ArgumentList @('/English', "/Image:$MountPath", '/Add-Driver', "/Driver:$DriverDirectory", '/Recurse') -Operation 'add-driver' | Out-Null
@@ -464,7 +397,6 @@ function Invoke-WinUtilOfflineServicingTransaction {
         }
 
         $after = Get-WinUtilOfflineImageInventory -MountedImagePath $MountPath -SourceImagePath $InstallImagePath -ImageIndex $ImageIndex -ImageName $ImageName -SystemApp $SystemAppDiscovery
-        Assert-WinUtilDefenderAfterState -Targets $defenderTargets -AfterInventory $after
         Assert-WinUtilGenericAfterState -Plan $ResolvedPlan -BeforeInventory $before -AfterInventory $after
         $diff = Get-WinUtilOfflineInventoryDiff -Before $before -After $after
         $afterManifest = [pscustomobject][ordered]@{
