@@ -188,9 +188,10 @@ function Invoke-WinUtilInstalledAcceptance {
         } catch { Add-AcceptanceResult $Id 'DeclaredState' $true 'Fail' $_.Exception.Message }
     }
 
-    Test-Command 'servicing.dism-checkhealth' 'Servicing' $true 'dism.exe' @('/Online', '/Cleanup-Image', '/CheckHealth')
+    $healthyComponentStorePattern = '(?im)^\s*No component store corruption detected\.\s*$'
+    Test-Command 'servicing.dism-checkhealth' 'Servicing' $true 'dism.exe' @('/Online', '/Cleanup-Image', '/CheckHealth') $healthyComponentStorePattern
     if ($Depth -eq 'Release') {
-        Test-Command 'servicing.dism-scanhealth' 'Servicing' $true 'dism.exe' @('/Online', '/Cleanup-Image', '/ScanHealth')
+        Test-Command 'servicing.dism-scanhealth' 'Servicing' $true 'dism.exe' @('/Online', '/Cleanup-Image', '/ScanHealth') $healthyComponentStorePattern
         Test-Command 'servicing.component-cleanup' 'Servicing' $true 'dism.exe' @('/Online', '/Cleanup-Image', '/StartComponentCleanup')
     } else {
         Add-AcceptanceResult 'servicing.dism-scanhealth' 'Servicing' $false 'NotRun' 'Release-depth probe.'
@@ -335,7 +336,7 @@ function Invoke-WinUtilInstalledAcceptance {
     $failedRequired = @($results | Where-Object { $_.Required -and $_.Status -ne 'Pass' })
     $document = [pscustomobject][ordered]@{
         SchemaVersion = '1.0'
-        HarnessVersion = '1.3.0'
+        HarnessVersion = '1.4.0'
         TimestampUtc = [DateTime]::UtcNow.ToString('o')
         ExpectedState = $ExpectedState
         Depth = $Depth

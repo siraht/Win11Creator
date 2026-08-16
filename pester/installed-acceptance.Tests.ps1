@@ -22,6 +22,8 @@ BeforeAll {
                 $commandFails = $FailCommand -and $identity -match $FailCommand
                 $evidence = if ($FilePath -eq 'reagentc.exe') {
                     'Windows RE status: Enabled'
+                } elseif ($identity -match '/(?:Check|Scan)Health') {
+                    'No component store corruption detected.'
                 } elseif ($identity -match 'Microsoft\.Update\.Session') {
                     'UpdateScan count=0 result=2'
                 } else {
@@ -73,7 +75,7 @@ Describe 'Installed acceptance harness' {
         Test-Path -LiteralPath ([IO.Path]::ChangeExtension($output, '.log')) | Should -BeTrue
         $document = Get-Content -LiteralPath $output -Raw | ConvertFrom-Json
         $document.SchemaVersion | Should -Be '1.0'
-        $document.HarnessVersion | Should -Be '1.3.0'
+        $document.HarnessVersion | Should -Be '1.4.0'
         $document.Results.Id | Should -Contain 'servicing.dism-checkhealth'
         $document.Results.Id | Should -Contain 'developer.directml'
         ($document.Results | Where-Object Id -eq 'servicing.dism-scanhealth').Status | Should -Be 'NotRun'
@@ -98,6 +100,23 @@ Describe 'Installed acceptance harness' {
         $result.IsAccepted | Should -BeFalse
         ($result.Document.Results | Where-Object Id -eq 'servicing.dism-checkhealth').Status | Should -Be 'Fail'
         $result.Document.Summary.RequiredFailures | Should -BeGreaterThan 0
+    }
+
+    It 'InstalledAcceptance_RepairableComponentStoreWithZeroExit_PlantedNegative' {
+        $provider = New-AcceptanceProbeProvider
+        $baseCommand = $provider.Command
+        $provider.Command = {
+            param ($FilePath, $ArgumentList)
+            if ($FilePath -eq 'dism.exe' -and $ArgumentList -contains '/CheckHealth') {
+                [pscustomobject]@{ Success = $true; Evidence = 'The component store is repairable.'; ExitCode = 0 }
+            } else {
+                & $baseCommand $FilePath $ArgumentList
+            }
+        }.GetNewClosure()
+        $result = Invoke-WinUtilInstalledAcceptance -ExpectedState StockControl -Depth Quick -OutputPath (Join-Path $TestDrive 'repairable-store.json') -ProbeProvider $provider
+
+        $result.ExitCode | Should -Be 1
+        ($result.Document.Results | Where-Object Id -eq 'servicing.dism-checkhealth').Status | Should -Be 'Fail'
     }
 
     It 'InstalledAcceptance_DisabledUpdateInfrastructure_PlantedNegative' {
