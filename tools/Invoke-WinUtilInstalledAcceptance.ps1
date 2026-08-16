@@ -101,6 +101,64 @@ function Get-WinUtilInstalledProbeProvider {
             if (-not $evidence) { $evidence = "$Target registration=$value" }
             [pscustomobject]@{ Present = $value; Evidence = $evidence }
         }
+        WerCrash = {
+            $token = [Guid]::NewGuid().ToString('N')
+            $probeRoot = Join-Path ([IO.Path]::GetTempPath()) "WinUtilWerAcceptance_$token"
+            $executableName = "WinUtilWerCrash_$token.exe"
+            $executablePath = Join-Path $probeRoot $executableName
+            $dumpKey = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\$executableName"
+            $dumpKeyCreated = $false
+            $probeResult = $null
+            $cleanupErrors = [System.Collections.Generic.List[string]]::new()
+            try {
+                New-Item -Path $probeRoot -ItemType Directory -ErrorAction Stop | Out-Null
+                $source = @"
+using System;
+internal static class WinUtilWerCrash_$token {
+    public static void Main() { Environment.FailFast("WinUtil controlled WER acceptance crash"); }
+}
+"@
+                Add-Type -TypeDefinition $source -OutputAssembly $executablePath -OutputType ConsoleApplication -ErrorAction Stop
+                if (Test-Path -LiteralPath $dumpKey) { throw "Unexpected pre-existing WER probe key '$dumpKey'." }
+                New-Item -Path $dumpKey -Force -ErrorAction Stop | Out-Null
+                $dumpKeyCreated = $true
+                New-ItemProperty -LiteralPath $dumpKey -Name DumpFolder -Value $probeRoot -PropertyType ExpandString -Force -ErrorAction Stop | Out-Null
+                New-ItemProperty -LiteralPath $dumpKey -Name DumpType -Value 2 -PropertyType DWord -Force -ErrorAction Stop | Out-Null
+
+                $process = Start-Process -FilePath $executablePath -PassThru -WindowStyle Hidden -ErrorAction Stop
+                if (-not $process.WaitForExit(30000)) {
+                    $process.Kill()
+                    throw 'Controlled crash process did not exit within 30 seconds.'
+                }
+                $deadline = [DateTime]::UtcNow.AddSeconds(30)
+                do {
+                    $dump = Get-ChildItem -LiteralPath $probeRoot -Filter '*.dmp' -File -ErrorAction SilentlyContinue |
+                        Where-Object Length -gt 0 | Select-Object -First 1
+                    if (-not $dump) { Start-Sleep -Milliseconds 250 }
+                } while (-not $dump -and [DateTime]::UtcNow -lt $deadline)
+
+                if (-not $dump) { throw 'Controlled crash produced no nonempty WER local dump within 30 seconds.' }
+                if ($process.ExitCode -eq 0) { throw 'Controlled crash unexpectedly exited successfully.' }
+                $probeResult = [pscustomobject]@{
+                    Success = $true
+                    Evidence = "Controlled crash pid=$($process.Id) exit=$($process.ExitCode); WER dump=$($dump.Name) bytes=$($dump.Length)"
+                }
+            } catch {
+                $probeResult = [pscustomobject]@{ Success = $false; Evidence = $_.Exception.Message }
+            } finally {
+                if ($dumpKeyCreated) {
+                    try { Remove-Item -LiteralPath $dumpKey -Recurse -Force -ErrorAction Stop } catch { $cleanupErrors.Add($_.Exception.Message) }
+                }
+                if (Test-Path -LiteralPath $probeRoot) {
+                    try { Remove-Item -LiteralPath $probeRoot -Recurse -Force -ErrorAction Stop } catch { $cleanupErrors.Add($_.Exception.Message) }
+                }
+            }
+            if ($cleanupErrors.Count -gt 0) {
+                [pscustomobject]@{ Success = $false; Evidence = "$($probeResult.Evidence); cleanup failed: $($cleanupErrors -join '; ')" }
+            } else {
+                $probeResult
+            }
+        }
     }
 }
 
@@ -119,7 +177,7 @@ function Invoke-WinUtilInstalledAcceptance {
     )
 
     if (-not $ProbeProvider) { $ProbeProvider = Get-WinUtilInstalledProbeProvider }
-    foreach ($boundary in @('Command', 'Registry', 'Appx', 'Service', 'Feature', 'Package', 'SystemApp', 'Task', 'File', 'Registration')) {
+    foreach ($boundary in @('Command', 'Registry', 'Appx', 'Service', 'Feature', 'Package', 'SystemApp', 'Task', 'File', 'Registration', 'WerCrash')) {
         if (-not $ProbeProvider.ContainsKey($boundary) -or $ProbeProvider[$boundary] -isnot [scriptblock]) {
             throw "ProbeProvider boundary '$boundary' must be a scriptblock."
         }
@@ -289,6 +347,14 @@ function Invoke-WinUtilInstalledAcceptance {
     foreach ($serviceName in @('WerSvc', 'PcaSvc', 'SysMain')) {
         Test-ServiceAvailability "protected.service.$($serviceName.ToLowerInvariant())" 'Protected' $true $serviceName $true
     }
+    if ($Depth -eq 'Release') {
+        try {
+            $werProbe = & $ProbeProvider.WerCrash
+            Add-AcceptanceResult 'protected.wer-crashdump' 'Protected' $true $(if ($werProbe.Success) { 'Pass' } else { 'Fail' }) ([string]$werProbe.Evidence)
+        } catch { Add-AcceptanceResult 'protected.wer-crashdump' 'Protected' $true 'Fail' $_.Exception.Message }
+    } else {
+        Add-AcceptanceResult 'protected.wer-crashdump' 'Protected' $false 'NotRun' 'Release-depth controlled crash probe.'
+    }
     Test-Presence 'protected.onesettings' 'Protected' $true 'File' @("$env:SystemRoot\System32\OneSettingsClient.dll") $true
     Test-Presence 'protected.featureconfig' 'Protected' $true 'File' @("$env:SystemRoot\System32\FlightSettings.dll") $true
     try {
@@ -336,7 +402,7 @@ function Invoke-WinUtilInstalledAcceptance {
     $failedRequired = @($results | Where-Object { $_.Required -and $_.Status -ne 'Pass' })
     $document = [pscustomobject][ordered]@{
         SchemaVersion = '1.0'
-        HarnessVersion = '1.4.0'
+        HarnessVersion = '1.5.0'
         TimestampUtc = [DateTime]::UtcNow.ToString('o')
         ExpectedState = $ExpectedState
         Depth = $Depth

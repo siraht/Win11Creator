@@ -60,6 +60,7 @@ BeforeAll {
                 [pscustomobject]@{ Present = -not (($lean -or $StockOptionalAbsent) -and $declaredRemoval); Evidence = "file=$Path version=1.0" }
             }.GetNewClosure()
             Registration = { param ($Target) [pscustomobject]@{ Present = $true; Evidence = "registration=$Target" } }
+            WerCrash = { [pscustomobject]@{ Success = $true; Evidence = 'Controlled crash exit=-1073740791; WER dump=WinUtilWerCrash.dmp bytes=4096' } }
         }
     }
 }
@@ -75,10 +76,13 @@ Describe 'Installed acceptance harness' {
         Test-Path -LiteralPath ([IO.Path]::ChangeExtension($output, '.log')) | Should -BeTrue
         $document = Get-Content -LiteralPath $output -Raw | ConvertFrom-Json
         $document.SchemaVersion | Should -Be '1.0'
-        $document.HarnessVersion | Should -Be '1.4.0'
+        $document.HarnessVersion | Should -Be '1.5.0'
         $document.Results.Id | Should -Contain 'servicing.dism-checkhealth'
         $document.Results.Id | Should -Contain 'developer.directml'
         ($document.Results | Where-Object Id -eq 'servicing.dism-scanhealth').Status | Should -Be 'NotRun'
+        $werResult = $document.Results | Where-Object Id -eq 'protected.wer-crashdump'
+        $werResult.Status | Should -Be 'NotRun'
+        $werResult.Required | Should -BeFalse
     }
 
     It 'InstalledAcceptance_LeanExpectedStateCoversDeclaredAndProtectedTargets' {
