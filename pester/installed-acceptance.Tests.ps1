@@ -69,6 +69,14 @@ BeforeAll {
             }
             WerCrash = { [pscustomobject]@{ Success = $true; Evidence = 'Controlled crash exit=-1073740791; WER dump=WinUtilWerCrash.dmp bytes=4096' } }
             NfsFunctional = { [pscustomobject]@{ Success = $true; Evidence = 'Enabled and queried NFS client; service=Running; nfsadmin exit=0; changedFeatures=ServicesForNFS-ClientOnly' } }
+            DeveloperFunctional = {
+                [pscustomobject]@{
+                    CleanupSucceeded = $true; Evidence = 'Removed isolated developer probe root.'
+                    Results = @('git', 'powershell', 'node', 'bun', 'python', 'rust', 'cargo' | ForEach-Object {
+                        [pscustomobject]@{ Id = "developer.$_"; Success = $true; Evidence = "functional $_ smoke passed" }
+                    })
+                }
+            }
         }
     }
 }
@@ -84,7 +92,7 @@ Describe 'Installed acceptance harness' {
         Test-Path -LiteralPath ([IO.Path]::ChangeExtension($output, '.log')) | Should -BeTrue
         $document = Get-Content -LiteralPath $output -Raw | ConvertFrom-Json
         $document.SchemaVersion | Should -Be '1.0'
-        $document.HarnessVersion | Should -Be '1.7.0'
+        $document.HarnessVersion | Should -Be '1.8.0'
         $document.Results.Id | Should -Contain 'servicing.dism-checkhealth'
         $document.Results.Id | Should -Contain 'developer.directml'
         ($document.Results | Where-Object Id -eq 'servicing.dism-scanhealth').Status | Should -Be 'NotRun'
@@ -288,6 +296,74 @@ Describe 'Installed acceptance harness' {
 
         $result.ExitCode | Should -Be 0
         ($result.Document.Results | Where-Object Id -eq 'update.install-one').Status | Should -Be 'NotRun'
+    }
+
+    It 'InstalledAcceptance_QuickNeverInvokesDeveloperFunctionalWork' {
+        $provider = New-AcceptanceProbeProvider
+        $provider.Remove('DeveloperFunctional')
+        $result = Invoke-WinUtilInstalledAcceptance -ExpectedState StockControl -Depth Quick -OutputPath (Join-Path $TestDrive 'developer-quick.json') -ProbeProvider $provider
+
+        $result.ExitCode | Should -Be 0
+        foreach ($id in @('developer.git', 'developer.powershell', 'developer.node', 'developer.bun', 'developer.python', 'developer.rust', 'developer.cargo')) {
+            $probe = $result.Document.Results | Where-Object Id -eq $id
+            $probe.Required | Should -BeFalse
+            $probe.Status | Should -Be 'Pass'
+        }
+    }
+
+    It 'InstalledAcceptance_ReleaseUsesFunctionalDeveloperEvidence' {
+        $provider = New-AcceptanceProbeProvider -Mode LeanDaw
+        $result = Invoke-WinUtilInstalledAcceptance -ExpectedState LeanDaw -Depth Release -OutputPath (Join-Path $TestDrive 'developer-release.json') `
+            -AbletonPath 'C:\ProgramData\Ableton\Live.exe' -Vst3Path @('C:\Program Files\Common Files\VST3\Vendor.vst3') `
+            -LatencyMonReportPath 'C:\Evidence\latencymon.txt' -SmokeCommand 'exit 0' -PostLoginSmokeCommand 'exit 0' -ProbeProvider $provider
+
+        $result.ExitCode | Should -Be 0
+        foreach ($id in @('developer.git', 'developer.powershell', 'developer.node', 'developer.bun', 'developer.python', 'developer.rust', 'developer.cargo')) {
+            $probe = $result.Document.Results | Where-Object Id -eq $id
+            $probe.Required | Should -BeTrue
+            $probe.Status | Should -Be 'Pass'
+            $probe.Evidence | Should -Match '^functional '
+        }
+    }
+
+    It 'InstalledAcceptance_DeveloperFunctionalPlantedNegativeFailsClosed' -ForEach @(
+        @{ Label = 'cleanup'; Mutate = { param ($envelope) $envelope.CleanupSucceeded = $false; $envelope.Evidence = 'probe root remains' } },
+        @{ Label = 'missing'; Mutate = { param ($envelope) $envelope.Results = @($envelope.Results | Where-Object Id -ne 'developer.node') } },
+        @{ Label = 'duplicate'; Mutate = { param ($envelope) $envelope.Results = @($envelope.Results) + @($envelope.Results | Select-Object -First 1) } },
+        @{ Label = 'malformed'; Mutate = { param ($envelope) ($envelope.Results | Where-Object Id -eq 'developer.python').Success = 'true' } },
+        @{ Label = 'failed-smoke'; Mutate = { param ($envelope) ($envelope.Results | Where-Object Id -eq 'developer.cargo').Success = $false } }
+    ) {
+        $provider = New-AcceptanceProbeProvider -Mode LeanDaw
+        $baseBoundary = $provider.DeveloperFunctional
+        $mutation = $Mutate
+        $provider.DeveloperFunctional = {
+            $envelope = & $baseBoundary
+            & $mutation $envelope
+            $envelope
+        }.GetNewClosure()
+        $result = Invoke-WinUtilInstalledAcceptance -ExpectedState LeanDaw -Depth Release -OutputPath (Join-Path $TestDrive "developer-$Label.json") `
+            -AbletonPath 'C:\ProgramData\Ableton\Live.exe' -Vst3Path @('C:\Program Files\Common Files\VST3\Vendor.vst3') `
+            -LatencyMonReportPath 'C:\Evidence\latencymon.txt' -SmokeCommand 'exit 0' -PostLoginSmokeCommand 'exit 0' -ProbeProvider $provider
+
+        $result.ExitCode | Should -Be 1
+        ($result.Document.Results | Where-Object { $_.Id -in @('developer.git', 'developer.powershell', 'developer.node', 'developer.bun', 'developer.python', 'developer.rust', 'developer.cargo') }).Status | Should -Contain 'Fail'
+    }
+
+    It 'InstalledAcceptance_ProductionDeveloperProbeIsIsolatedTimedAndReversible' {
+        $probeText = (Get-WinUtilInstalledProbeProvider).DeveloperFunctional.ToString()
+
+        $probeText | Should -Match 'WinUtilDeveloperAcceptance_'
+        $probeText | Should -Match 'WaitForExit\(\$TimeoutSeconds \* 1000\)'
+        $probeText | Should -Match "@\('init', '--quiet'\)"
+        $probeText | Should -Match "@\('commit', '--quiet', '-m', 'acceptance smoke'\)"
+        $probeText | Should -Match "pwsh\.exe @\('-NoProfile', '-NonInteractive', '-File'"
+        $probeText | Should -Match "node\.exe @\('--check'"
+        $probeText | Should -Match "bun\.exe @\('build'"
+        $probeText | Should -Match "python\.exe @\('-m', 'venv'"
+        $probeText | Should -Match "cargo\.exe @\('run', '--quiet', '--manifest-path'"
+        $probeText | Should -Match "-cne 'WINUTIL_"
+        $probeText | Should -Match 'Remove-Item -LiteralPath \$probeRoot -Recurse -Force'
+        $probeText | Should -Match 'CleanupSucceeded = \$cleanupSucceeded'
     }
 
     It 'InstalledAcceptance_ProductionUpdateInstallBoundarySelectsOneSoftwareUpdateAndRecordsComResults' {
