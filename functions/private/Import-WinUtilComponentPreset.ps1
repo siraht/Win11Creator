@@ -81,18 +81,18 @@ function ConvertFrom-WinUtilComponentPresetJson {
     $allowedProperties = @('schemaVersion', 'documentType', 'profileId', 'actions')
     $properties = @($preset.PSObject.Properties.Name)
     foreach ($property in $properties) {
-        if ($property -notin $allowedProperties) { throw "Win11 Creator preset contains unknown property '$property'." }
+        if ($property -cnotin $allowedProperties) { throw "Win11 Creator preset contains unknown property '$property'." }
     }
     foreach ($property in $allowedProperties) {
-        if ($property -notin $properties) { throw "Win11 Creator preset is missing required property '$property'." }
+        if ($property -cnotin $properties) { throw "Win11 Creator preset is missing required property '$property'." }
     }
-    if ([string]$preset.schemaVersion -ne '1') {
+    if ($preset.schemaVersion -isnot [int] -and $preset.schemaVersion -isnot [long] -or [long]$preset.schemaVersion -ne 1) {
         throw "Unsupported Win11 Creator preset schemaVersion '$($preset.schemaVersion)'."
     }
-    if ([string]$preset.documentType -ne 'win11creator-component-preset') {
+    if ([string]$preset.documentType -cne 'win11creator-component-preset') {
         throw "Invalid Win11 Creator preset documentType '$($preset.documentType)'."
     }
-    if ([string]$preset.profileId -ne 'custom') { throw "Win11 Creator preset profileId must be 'custom'." }
+    if ([string]$preset.profileId -cne 'custom') { throw "Win11 Creator preset profileId must be 'custom'." }
     if ($null -eq $preset.actions -or $preset.actions -is [array] -or $preset.actions -is [string]) {
         throw 'Win11 Creator preset actions must be one JSON object.'
     }
@@ -100,7 +100,7 @@ function ConvertFrom-WinUtilComponentPresetJson {
     $catalogIds = @($Catalog.components | ForEach-Object { [string]$_.id })
     $actionProperties = @($preset.actions.PSObject.Properties)
     foreach ($property in $actionProperties) {
-        if ([string]$property.Name -notin $catalogIds) {
+        if ([string]$property.Name -cnotin $catalogIds) {
             throw "Win11 Creator preset references unknown component '$($property.Name)'."
         }
     }
@@ -110,8 +110,8 @@ function ConvertFrom-WinUtilComponentPresetJson {
     $actions = [ordered]@{}
     foreach ($property in @($actionProperties | Sort-Object Name)) {
         $componentId = [string]$property.Name
-        $action = ([string]$property.Value).ToLowerInvariant()
-        if ($action -notin @('keep', 'remove', 'disable', 'manual', 'protected')) {
+        $action = [string]$property.Value
+        if ($action -cnotin @('keep', 'remove', 'disable', 'manual', 'protected')) {
             throw "Win11 Creator preset action for '$componentId' is invalid: '$action'."
         }
         $actions[$componentId] = $action

@@ -46,6 +46,11 @@ Describe 'Win11 Creator component preset import and export' {
         $valid | Add-Member -NotePropertyName expertMode -NotePropertyValue $true
         { ConvertFrom-WinUtilComponentPresetJson -Json ($valid | ConvertTo-Json -Depth 4) -Catalog $script:catalog } |
             Should -Throw "*unknown property 'expertMode'*"
+
+        $stringVersion = Get-WinUtilComponentPresetDocument -Catalog $script:catalog -Profiles $script:profiles -SelectedProfileId 'default-winutil'
+        $stringVersion.schemaVersion = '1'
+        { ConvertFrom-WinUtilComponentPresetJson -Json ($stringVersion | ConvertTo-Json -Depth 4) -Catalog $script:catalog } |
+            Should -Throw '*Unsupported*schemaVersion*'
     }
 
     It 'plants unknown component, missing component, and invalid action negatives' {
@@ -64,6 +69,11 @@ Describe 'Win11 Creator component preset import and export' {
         $invalid.actions.([string]$script:catalog.components[0].id) = 'erase'
         { ConvertFrom-WinUtilComponentPresetJson -Json ($invalid | ConvertTo-Json -Depth 4) -Catalog $script:catalog } |
             Should -Throw '*is invalid*erase*'
+
+        $wrongCase = $valid | ConvertTo-Json -Depth 4 | ConvertFrom-Json
+        $wrongCase.actions.([string]$script:catalog.components[0].id) = 'Remove'
+        { ConvertFrom-WinUtilComponentPresetJson -Json ($wrongCase | ConvertTo-Json -Depth 4) -Catalog $script:catalog } |
+            Should -Throw '*is invalid*Remove*'
     }
 
     It 'rejects mutually exclusive actions before they can reach Custom state' {
