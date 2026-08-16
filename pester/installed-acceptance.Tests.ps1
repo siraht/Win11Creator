@@ -60,6 +60,13 @@ BeforeAll {
                 [pscustomobject]@{ Present = -not (($lean -or $StockOptionalAbsent) -and $declaredRemoval); Evidence = "file=$Path version=1.0" }
             }.GetNewClosure()
             Registration = { param ($Target) [pscustomobject]@{ Present = $true; Evidence = "registration=$Target" } }
+            UpdateInstall = {
+                [pscustomobject]@{
+                    Outcome = 'ZeroApplicable'; SearchResultCode = 2; ApplicableCount = 0; Title = $null; KBArticleIDs = @()
+                    DownloadResultCode = $null; InstallResultCode = $null; UpdateResultCode = $null; HResult = $null
+                    RebootRequired = $false; Evidence = 'UpdateInstall outcome=ZeroApplicable searchResult=2 applicable=0 rebootRequired=False'
+                }
+            }
             WerCrash = { [pscustomobject]@{ Success = $true; Evidence = 'Controlled crash exit=-1073740791; WER dump=WinUtilWerCrash.dmp bytes=4096' } }
             NfsFunctional = { [pscustomobject]@{ Success = $true; Evidence = 'Enabled and queried NFS client; service=Running; nfsadmin exit=0; changedFeatures=ServicesForNFS-ClientOnly' } }
         }
@@ -87,6 +94,9 @@ Describe 'Installed acceptance harness' {
         $nfsResult = $document.Results | Where-Object Id -eq 'protected.nfs-functional'
         $nfsResult.Status | Should -Be 'NotRun'
         $nfsResult.Required | Should -BeFalse
+        $updateInstall = $document.Results | Where-Object Id -eq 'update.install-one'
+        $updateInstall.Status | Should -Be 'NotRun'
+        $updateInstall.Required | Should -BeFalse
     }
 
     It 'InstalledAcceptance_LeanExpectedStateCoversDeclaredAndProtectedTargets' {
@@ -203,6 +213,87 @@ Describe 'Installed acceptance harness' {
         $result.ExitCode | Should -Be 1
         ($result.Document.Results | Where-Object Id -eq 'update.scan').Status | Should -Be 'Fail'
         $result.Document.Summary.RequiredFailures | Should -BeGreaterThan 0
+    }
+
+    It 'InstalledAcceptance_ReleaseRecordsExactZeroApplicableUpdateEvidence' {
+        $provider = New-AcceptanceProbeProvider -Mode LeanDaw
+        $result = Invoke-WinUtilInstalledAcceptance -ExpectedState LeanDaw -Depth Release -OutputPath (Join-Path $TestDrive 'update-zero.json') `
+            -AbletonPath 'C:\ProgramData\Ableton\Live.exe' -Vst3Path @('C:\Program Files\Common Files\VST3\Vendor.vst3') `
+            -LatencyMonReportPath 'C:\Evidence\latencymon.txt' -SmokeCommand 'exit 0' -PostLoginSmokeCommand 'exit 0' -ProbeProvider $provider
+
+        $probe = $result.Document.Results | Where-Object Id -eq 'update.install-one'
+        $probe.Status | Should -Be 'Pass'
+        $probe.Required | Should -BeTrue
+        $probe.Evidence | Should -Be 'UpdateInstall outcome=ZeroApplicable searchResult=2 applicable=0 rebootRequired=False'
+        $probe.Details.Outcome | Should -Be 'ZeroApplicable'
+        $probe.Details.SearchResultCode | Should -Be 2
+        $probe.Details.ApplicableCount | Should -Be 0
+        $probe.Details.RebootRequired | Should -BeFalse
+    }
+
+    It 'InstalledAcceptance_ReleaseAcceptsOneInstalledSoftwareUpdateWithComEvidence' {
+        $provider = New-AcceptanceProbeProvider -Mode LeanDaw
+        $provider.UpdateInstall = {
+            [pscustomobject]@{
+                Outcome = 'Installed'; SearchResultCode = 2; ApplicableCount = 3; Title = '2026-08 Cumulative Update'; KBArticleIDs = @('5069999')
+                DownloadResultCode = 2; InstallResultCode = 2; UpdateResultCode = 2; HResult = 0; RebootRequired = $true
+                Evidence = 'UpdateInstall outcome=Installed searchResult=2 applicable=3 downloadResult=2 installResult=2 updateResult=2 hresult=0 rebootRequired=True title=2026-08 Cumulative Update kb=5069999'
+            }
+        }
+        $result = Invoke-WinUtilInstalledAcceptance -ExpectedState LeanDaw -Depth Release -OutputPath (Join-Path $TestDrive 'update-installed.json') `
+            -AbletonPath 'C:\ProgramData\Ableton\Live.exe' -Vst3Path @('C:\Program Files\Common Files\VST3\Vendor.vst3') `
+            -LatencyMonReportPath 'C:\Evidence\latencymon.txt' -SmokeCommand 'exit 0' -PostLoginSmokeCommand 'exit 0' -ProbeProvider $provider
+
+        $probe = $result.Document.Results | Where-Object Id -eq 'update.install-one'
+        $probe.Status | Should -Be 'Pass'
+        $probe.Evidence | Should -Match 'rebootRequired=True'
+        $probe.Details.DownloadResultCode | Should -Be 2
+        $probe.Details.InstallResultCode | Should -Be 2
+        $probe.Details.UpdateResultCode | Should -Be 2
+        $probe.Details.HResult | Should -Be 0
+        $probe.Details.RebootRequired | Should -BeTrue
+    }
+
+    It 'InstalledAcceptance_ReleaseUpdateInstallFailsClosedOnPlantedComEvidence' -ForEach @(
+        @{ Label = 'search-failed'; Value = @{ Outcome = 'ZeroApplicable'; SearchResultCode = 4; ApplicableCount = 0; RebootRequired = $false; Evidence = 'process exit=0' } },
+        @{ Label = 'false-zero'; Value = @{ Outcome = 'ZeroApplicable'; SearchResultCode = 2; ApplicableCount = 1; RebootRequired = $false; Evidence = 'process exit=0' } },
+        @{ Label = 'download-failed'; Value = @{ Outcome = 'Installed'; SearchResultCode = 2; ApplicableCount = 1; Title = 'Update'; KBArticleIDs = @(); DownloadResultCode = 4; InstallResultCode = 2; UpdateResultCode = 2; HResult = 0; RebootRequired = $false; Evidence = 'process exit=0'; Success = $true } },
+        @{ Label = 'install-failed'; Value = @{ Outcome = 'Installed'; SearchResultCode = 2; ApplicableCount = 1; Title = 'Update'; KBArticleIDs = @(); DownloadResultCode = 2; InstallResultCode = 4; UpdateResultCode = 2; HResult = 0; RebootRequired = $false; Evidence = 'process exit=0'; Success = $true } },
+        @{ Label = 'per-update-failed'; Value = @{ Outcome = 'Installed'; SearchResultCode = 2; ApplicableCount = 1; Title = 'Update'; KBArticleIDs = @(); DownloadResultCode = 2; InstallResultCode = 2; UpdateResultCode = 4; HResult = -2145124329; RebootRequired = $false; Evidence = 'process exit=0'; Success = $true } },
+        @{ Label = 'failed-hresult'; Value = @{ Outcome = 'Installed'; SearchResultCode = 2; ApplicableCount = 1; Title = 'Update'; KBArticleIDs = @(); DownloadResultCode = 2; InstallResultCode = 2; UpdateResultCode = 2; HResult = -2145124329; RebootRequired = $false; Evidence = 'process exit=0'; Success = $true } },
+        @{ Label = 'missing-hresult'; Value = @{ Outcome = 'Installed'; SearchResultCode = 2; ApplicableCount = 1; Title = 'Update'; KBArticleIDs = @(); DownloadResultCode = 2; InstallResultCode = 2; UpdateResultCode = 2; RebootRequired = $false; Evidence = 'process exit=0'; Success = $true } }
+    ) {
+        $provider = New-AcceptanceProbeProvider -Mode LeanDaw
+        $planted = $Value
+        $provider.UpdateInstall = { [pscustomobject]$planted }.GetNewClosure()
+        $result = Invoke-WinUtilInstalledAcceptance -ExpectedState LeanDaw -Depth Release -OutputPath (Join-Path $TestDrive "update-$Label.json") `
+            -AbletonPath 'C:\ProgramData\Ableton\Live.exe' -Vst3Path @('C:\Program Files\Common Files\VST3\Vendor.vst3') `
+            -LatencyMonReportPath 'C:\Evidence\latencymon.txt' -SmokeCommand 'exit 0' -PostLoginSmokeCommand 'exit 0' -ProbeProvider $provider
+
+        $result.ExitCode | Should -Be 1
+        ($result.Document.Results | Where-Object Id -eq 'update.install-one').Status | Should -Be 'Fail'
+    }
+
+    It 'InstalledAcceptance_QuickNeverInvokesUpdateInstallation' {
+        $provider = New-AcceptanceProbeProvider
+        $provider.UpdateInstall = { throw 'Quick mode must not install an update.' }
+        $result = Invoke-WinUtilInstalledAcceptance -ExpectedState StockControl -Depth Quick -OutputPath (Join-Path $TestDrive 'update-quick.json') -ProbeProvider $provider
+
+        $result.ExitCode | Should -Be 0
+        ($result.Document.Results | Where-Object Id -eq 'update.install-one').Status | Should -Be 'NotRun'
+    }
+
+    It 'InstalledAcceptance_ProductionUpdateInstallBoundarySelectsOneSoftwareUpdateAndRecordsComResults' {
+        $probeText = (Get-WinUtilInstalledProbeProvider).UpdateInstall.ToString()
+
+        $probeText | Should -Match "Type='Software'"
+        $probeText | Should -Match '\$search\.Updates\.Item\(0\)'
+        $probeText | Should -Match '\[void\]\$selection\.Add\(\$update\)'
+        $probeText | Should -Match '\$downloader\.Download\(\)'
+        $probeText | Should -Match '\$installer\.Install\(\)'
+        $probeText | Should -Match '\$install\.GetUpdateResult\(0\)'
+        $probeText | Should -Match 'HResult'
+        $probeText | Should -Match 'RebootRequired'
     }
 
     It 'InstalledAcceptance_ReleaseMissingCommercialEvidenceIsNotRunAndBlocking' {
@@ -365,6 +456,13 @@ Describe 'Installed acceptance harness' {
         $provider.Remove('NfsFunctional')
         { Invoke-WinUtilInstalledAcceptance -OutputPath (Join-Path $TestDrive 'bad-nfs.json') -ProbeProvider $provider } |
             Should -Throw "*boundary 'NfsFunctional' must be a scriptblock*"
+    }
+
+    It 'InstalledAcceptance_MissingUpdateInstallBoundary_PlantedNegative' {
+        $provider = New-AcceptanceProbeProvider
+        $provider.Remove('UpdateInstall')
+        { Invoke-WinUtilInstalledAcceptance -Depth Release -OutputPath (Join-Path $TestDrive 'bad-update-install.json') -ProbeProvider $provider } |
+            Should -Throw "*boundary 'UpdateInstall' must be a scriptblock*"
     }
 
     It 'InstalledAcceptance_StockOptionalSourceAbsenceDoesNotBlock' {
