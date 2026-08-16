@@ -421,11 +421,11 @@ Describe 'Offline servicing transaction boundary' {
     }
 
     It 'discards when a successful generic cmdlet is a no-op' {
-        $app = [pscustomobject]@{ Kind = 'AppX'; Name = 'Microsoft.Copilot'; Identity = 'Microsoft.Copilot_1.0_neutral_test'; State = 'Provisioned' }
+        $app = [pscustomobject]@{ Kind = 'AppX'; Name = 'MicrosoftWindows.Client.CoreAI'; Identity = 'MicrosoftWindows.Client.CoreAI_1000.26100.6584.0_x64__cw5n1h2txyewy'; State = 'Provisioned' }
         $script:beforeItems = @($app)
         $script:afterItems = @($app)
         $decision = New-TransactionDecision AppX $app.Identity Remove
-        $decision.PolicyId = 'copilot'
+        $decision.PolicyId = 'windows-ai'
         $plan = [pscustomobject]@{ SchemaVersion = '1.0'; Safety = [pscustomobject]@{ IsAllowed = $true }; Decisions = @($decision) }
 
         { Invoke-WinUtilOfflineServicingTransaction -InstallImagePath $script:wimPath -ImageIndex 6 -ResolvedPlan $plan -MountPath $script:mountPath -ManifestDirectory $script:manifestPath } |
@@ -459,6 +459,7 @@ Describe 'Offline servicing transaction boundary' {
             [pscustomobject]@{ Kind = 'AppX'; Name = 'Microsoft.BingNews'; Identity = 'BingNews_1.0'; State = 'Provisioned'; PolicyId = 'consumer-appx' }
             [pscustomobject]@{ Kind = 'AppX'; Name = 'Microsoft.XboxApp'; Identity = 'Xbox_1.0'; State = 'Provisioned'; PolicyId = 'xbox-gaming' }
             [pscustomobject]@{ Kind = 'AppX'; Name = 'Microsoft.OneDriveSync'; Identity = 'OneDrive_1.0'; State = 'Provisioned'; PolicyId = 'onedrive' }
+            [pscustomobject]@{ Kind = 'AppX'; Name = 'MicrosoftWindows.Client.CoreAI'; Identity = 'MicrosoftWindows.Client.CoreAI_1000.26100.6584.0_x64__cw5n1h2txyewy'; State = 'Provisioned'; PolicyId = 'windows-ai' }
             [pscustomobject]@{ Kind = 'Package'; Name = 'Microsoft-Windows-Client-AIX-Package'; Identity = 'AIX~test'; State = 'Installed'; PolicyId = 'windows-ai' }
             [pscustomobject]@{ Kind = 'Package'; Name = 'Microsoft-Windows-OneDrive-Package'; Identity = 'OneDrivePackage~test'; State = 'Installed'; PolicyId = 'onedrive' }
         )
@@ -477,7 +478,8 @@ Describe 'Offline servicing transaction boundary' {
 
         Invoke-WinUtilOfflineServicingTransaction -InstallImagePath $script:wimPath -ImageIndex 6 -ResolvedPlan $plan -MountPath $script:mountPath -ManifestDirectory $script:manifestPath | Out-Null
 
-        Should -Invoke Remove-AppxProvisionedPackage -Times 6 -Exactly
+        Should -Invoke Remove-AppxProvisionedPackage -Times 7 -Exactly
+        Should -Invoke Remove-AppxProvisionedPackage -Times 1 -Exactly -ParameterFilter { $PackageName -eq 'MicrosoftWindows.Client.CoreAI_1000.26100.6584.0_x64__cw5n1h2txyewy' }
         Should -Invoke Remove-WindowsPackage -Times 2 -Exactly
         Should -Invoke Remove-WindowsPackage -Times 0 -Exactly -ParameterFilter { $PackageName -in @('WebView2~test', 'ClientCBS~test') }
         Should -Invoke Dismount-WindowsImage -Times 1 -Exactly -ParameterFilter { $Save }
