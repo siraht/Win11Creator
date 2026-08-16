@@ -106,7 +106,9 @@ function Get-WinUtilInstalledProbeProvider {
             $probeRoot = Join-Path ([IO.Path]::GetTempPath()) "WinUtilWerAcceptance_$token"
             $executableName = "WinUtilWerCrash_$token.exe"
             $executablePath = Join-Path $probeRoot $executableName
-            $dumpKey = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\$executableName"
+            $localDumpsRoot = 'Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps'
+            $dumpKey = "$localDumpsRoot\$executableName"
+            $localDumpsRootCreated = $false
             $dumpKeyCreated = $false
             $probeResult = $null
             $cleanupErrors = [System.Collections.Generic.List[string]]::new()
@@ -120,6 +122,10 @@ internal static class WinUtilWerCrash_$token {
 "@
                 Add-Type -TypeDefinition $source -OutputAssembly $executablePath -OutputType ConsoleApplication -ErrorAction Stop
                 if (Test-Path -LiteralPath $dumpKey) { throw "Unexpected pre-existing WER probe key '$dumpKey'." }
+                if (-not (Test-Path -LiteralPath $localDumpsRoot)) {
+                    New-Item -Path $localDumpsRoot -Force -ErrorAction Stop | Out-Null
+                    $localDumpsRootCreated = $true
+                }
                 New-Item -Path $dumpKey -Force -ErrorAction Stop | Out-Null
                 $dumpKeyCreated = $true
                 New-ItemProperty -LiteralPath $dumpKey -Name DumpFolder -Value $probeRoot -PropertyType ExpandString -Force -ErrorAction Stop | Out-Null
@@ -148,6 +154,9 @@ internal static class WinUtilWerCrash_$token {
             } finally {
                 if ($dumpKeyCreated) {
                     try { Remove-Item -LiteralPath $dumpKey -Recurse -Force -ErrorAction Stop } catch { $cleanupErrors.Add($_.Exception.Message) }
+                }
+                if ($localDumpsRootCreated) {
+                    try { Remove-Item -LiteralPath $localDumpsRoot -Force -ErrorAction Stop } catch { $cleanupErrors.Add($_.Exception.Message) }
                 }
                 if (Test-Path -LiteralPath $probeRoot) {
                     try { Remove-Item -LiteralPath $probeRoot -Recurse -Force -ErrorAction Stop } catch { $cleanupErrors.Add($_.Exception.Message) }

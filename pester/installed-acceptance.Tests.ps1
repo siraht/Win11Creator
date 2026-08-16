@@ -233,11 +233,52 @@ Describe 'Installed acceptance harness' {
         ($result.Document.Results | Where-Object Area -eq 'DAW').Status | Should -Not -Contain 'NotRun'
     }
 
+    It 'InstalledAcceptance_ReleaseWerDumpFailureIsBlocking_PlantedNegative' {
+        $provider = New-AcceptanceProbeProvider -Mode LeanDaw
+        $provider.WerCrash = { [pscustomobject]@{ Success = $false; Evidence = 'Controlled crash produced no nonempty WER local dump.' } }
+        $result = Invoke-WinUtilInstalledAcceptance -ExpectedState LeanDaw -Depth Release -OutputPath (Join-Path $TestDrive 'wer-failure.json') `
+            -AbletonPath 'C:\ProgramData\Ableton\Live.exe' -Vst3Path @('C:\Program Files\Common Files\VST3\Vendor.vst3') `
+            -LatencyMonReportPath 'C:\Evidence\latencymon.txt' -SmokeCommand 'exit 0' -PostLoginSmokeCommand 'exit 0' -ProbeProvider $provider
+
+        $result.ExitCode | Should -Be 1
+        $werResult = $result.Document.Results | Where-Object Id -eq 'protected.wer-crashdump'
+        $werResult.Required | Should -BeTrue
+        $werResult.Status | Should -Be 'Fail'
+        $werResult.Evidence | Should -Match 'no nonempty WER local dump'
+    }
+
+    It 'InstalledAcceptance_QuickDoesNotRunControlledWerCrash' {
+        $provider = New-AcceptanceProbeProvider
+        $provider.WerCrash = { throw 'Quick mode must not trigger a controlled crash.' }
+        $result = Invoke-WinUtilInstalledAcceptance -ExpectedState StockControl -Depth Quick -OutputPath (Join-Path $TestDrive 'wer-quick.json') -ProbeProvider $provider
+
+        $result.ExitCode | Should -Be 0
+        ($result.Document.Results | Where-Object Id -eq 'protected.wer-crashdump').Status | Should -Be 'NotRun'
+    }
+
+    It 'InstalledAcceptance_ProductionWerProbeUsesLocalDumpsAndCleansUp' {
+        $provider = Get-WinUtilInstalledProbeProvider
+        $probeText = $provider.WerCrash.ToString()
+
+        $probeText | Should -Match 'Environment\.FailFast'
+        $probeText | Should -Match 'Windows Error Reporting\\LocalDumps'
+        $probeText | Should -Match "Where-Object Length -gt 0"
+        $probeText | Should -Match 'Remove-Item -LiteralPath \$dumpKey'
+        $probeText | Should -Match 'Remove-Item -LiteralPath \$probeRoot'
+    }
+
     It 'InstalledAcceptance_MalformedBoundary_PlantedNegative' {
         $provider = New-AcceptanceProbeProvider
         $provider.Remove('Registry')
         { Invoke-WinUtilInstalledAcceptance -OutputPath (Join-Path $TestDrive 'bad.json') -ProbeProvider $provider } |
             Should -Throw "*boundary 'Registry' must be a scriptblock*"
+    }
+
+    It 'InstalledAcceptance_MissingWerBoundary_PlantedNegative' {
+        $provider = New-AcceptanceProbeProvider
+        $provider.Remove('WerCrash')
+        { Invoke-WinUtilInstalledAcceptance -OutputPath (Join-Path $TestDrive 'bad-wer.json') -ProbeProvider $provider } |
+            Should -Throw "*boundary 'WerCrash' must be a scriptblock*"
     }
 
     It 'InstalledAcceptance_StockOptionalSourceAbsenceDoesNotBlock' {
