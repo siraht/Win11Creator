@@ -327,7 +327,9 @@ function Invoke-WinUtilInstalledAcceptance {
     )
 
     if (-not $ProbeProvider) { $ProbeProvider = Get-WinUtilInstalledProbeProvider }
-    foreach ($boundary in @('Command', 'Registry', 'Appx', 'Service', 'Feature', 'Package', 'SystemApp', 'Task', 'File', 'Registration', 'UpdateInstall', 'WerCrash', 'NfsFunctional')) {
+    $requiredBoundaries = @('Command', 'Registry', 'Appx', 'Service', 'Feature', 'Package', 'SystemApp', 'Task', 'File', 'Registration', 'WerCrash', 'NfsFunctional')
+    if ($Depth -eq 'Release') { $requiredBoundaries += 'UpdateInstall' }
+    foreach ($boundary in $requiredBoundaries) {
         if (-not $ProbeProvider.ContainsKey($boundary) -or $ProbeProvider[$boundary] -isnot [scriptblock]) {
             throw "ProbeProvider boundary '$boundary' must be a scriptblock."
         }

@@ -217,7 +217,8 @@ Describe 'Installed acceptance harness' {
 
     It 'InstalledAcceptance_ReleaseRecordsExactZeroApplicableUpdateEvidence' {
         $provider = New-AcceptanceProbeProvider -Mode LeanDaw
-        $result = Invoke-WinUtilInstalledAcceptance -ExpectedState LeanDaw -Depth Release -OutputPath (Join-Path $TestDrive 'update-zero.json') `
+        $outputPath = Join-Path $TestDrive 'update-zero.json'
+        $result = Invoke-WinUtilInstalledAcceptance -ExpectedState LeanDaw -Depth Release -OutputPath $outputPath `
             -AbletonPath 'C:\ProgramData\Ableton\Live.exe' -Vst3Path @('C:\Program Files\Common Files\VST3\Vendor.vst3') `
             -LatencyMonReportPath 'C:\Evidence\latencymon.txt' -SmokeCommand 'exit 0' -PostLoginSmokeCommand 'exit 0' -ProbeProvider $provider
 
@@ -229,6 +230,10 @@ Describe 'Installed acceptance harness' {
         $probe.Details.SearchResultCode | Should -Be 2
         $probe.Details.ApplicableCount | Should -Be 0
         $probe.Details.RebootRequired | Should -BeFalse
+        $persistedProbe = (Get-Content -LiteralPath $outputPath -Raw | ConvertFrom-Json).Results | Where-Object Id -eq 'update.install-one'
+        $persistedProbe.Details.Outcome | Should -Be 'ZeroApplicable'
+        $persistedProbe.Details.SearchResultCode | Should -Be 2
+        $persistedProbe.Details.RebootRequired | Should -BeFalse
     }
 
     It 'InstalledAcceptance_ReleaseAcceptsOneInstalledSoftwareUpdateWithComEvidence' {
@@ -276,7 +281,7 @@ Describe 'Installed acceptance harness' {
 
     It 'InstalledAcceptance_QuickNeverInvokesUpdateInstallation' {
         $provider = New-AcceptanceProbeProvider
-        $provider.UpdateInstall = { throw 'Quick mode must not install an update.' }
+        $provider.Remove('UpdateInstall')
         $result = Invoke-WinUtilInstalledAcceptance -ExpectedState StockControl -Depth Quick -OutputPath (Join-Path $TestDrive 'update-quick.json') -ProbeProvider $provider
 
         $result.ExitCode | Should -Be 0
@@ -459,9 +464,9 @@ Describe 'Installed acceptance harness' {
     }
 
     It 'InstalledAcceptance_MissingUpdateInstallBoundary_PlantedNegative' {
-        $provider = New-AcceptanceProbeProvider
+        $provider = New-AcceptanceProbeProvider -Mode LeanDaw
         $provider.Remove('UpdateInstall')
-        { Invoke-WinUtilInstalledAcceptance -Depth Release -OutputPath (Join-Path $TestDrive 'bad-update-install.json') -ProbeProvider $provider } |
+        { Invoke-WinUtilInstalledAcceptance -ExpectedState LeanDaw -Depth Release -OutputPath (Join-Path $TestDrive 'bad-update-install.json') -ProbeProvider $provider } |
             Should -Throw "*boundary 'UpdateInstall' must be a scriptblock*"
     }
 
