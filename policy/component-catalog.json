@@ -194,11 +194,6 @@
           ]
         },
         {
-          "kind": "feature",
-          "match": "Windows-Defender-*",
-          "matchType": "wildcard"
-        },
-        {
           "kind": "service",
           "match": "WinDefend",
           "matchType": "exact",
@@ -210,12 +205,6 @@
               "startupType": "disabled"
             }
           ]
-        },
-        {
-          "kind": "package",
-          "match": "Microsoft-Windows-Windows-Defender-*",
-          "matchType": "wildcard",
-          "allowMultiple": true
         }
       ],
       "protects": [],

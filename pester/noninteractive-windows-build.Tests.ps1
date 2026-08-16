@@ -23,8 +23,9 @@ BeforeAll {
                 SchemaVersion = '1.0'
                 Source = [pscustomobject]@{ ImagePath = 'install.wim'; ImageIndex = 6; ImageName = 'Windows 11 Pro'; MountedImagePath = 'mount' }
                 Items = @(
-                    [pscustomobject]@{ Kind = 'Feature'; Name = 'Windows-Defender-Feature'; Identity = 'Windows-Defender-Feature'; State = 'Enabled' }
-                    [pscustomobject]@{ Kind = 'Package'; Name = 'Microsoft-Windows-Windows-Defender-Package'; Identity = 'Microsoft-Windows-Windows-Defender-Package~31bf~amd64~~10.0.26200.1'; State = 'Installed' }
+                    [pscustomobject]@{ Kind = 'Feature'; Name = 'Windows-Defender-Default-Definitions'; Identity = 'Windows-Defender-Default-Definitions'; State = 'Enabled' }
+                    [pscustomobject]@{ Kind = 'Capability'; Name = 'Microsoft.Windows.Sense.Client~~~~'; Identity = 'Microsoft.Windows.Sense.Client~~~~'; State = 'Installed' }
+                    [pscustomobject]@{ Kind = 'Package'; Name = 'Microsoft-Windows-SenseClient-FoD-Package'; Identity = 'Microsoft-Windows-SenseClient-FoD-Package~31bf3856ad364e35~amd64~~10.0.26200.6584'; State = 'Installed' }
                 )
             }
         }
@@ -190,15 +191,15 @@ Describe 'Noninteractive Windows ISO build orchestration' {
         Test-Path -LiteralPath $fixture.OutputIso | Should -BeFalse
     }
 
-    It 'allows the Lean DAW profile only when Expert mode is explicit' {
+    It 'keeps Lean DAW blocked in Expert mode without a supported Defender core target' {
         $fixture = New-NonInteractiveBuildFixture
 
-        $result = Invoke-WinUtilWindowsBuild -SourceIsoPath $fixture.SourceIso -ImageIndex 6 -Profile lean-daw -ExpertMode `
-            -OutputIsoPath $fixture.OutputIso -WorkDirectory $fixture.Work -OscdimgPath $fixture.Oscdimg -BuildProvider $fixture.Provider
+        { Invoke-WinUtilWindowsBuild -SourceIsoPath $fixture.SourceIso -ImageIndex 6 -Profile lean-daw -ExpertMode `
+            -OutputIsoPath $fixture.OutputIso -WorkDirectory $fixture.Work -OscdimgPath $fixture.Oscdimg -BuildProvider $fixture.Provider } |
+            Should -Throw "*Resolved 'lean-daw' plan is not ready or allowed*"
 
-        $result.Profile | Should -Be 'lean-daw'
-        $fixture.State.PrepareArguments.ActionBundle.IsAllowed | Should -BeTrue
-        $fixture.State.PrepareArguments.ActionBundle.ProfileId | Should -Be 'lean-daw'
+        $fixture.Session.State | Should -Be 'Discarded'
+        Test-Path -LiteralPath $fixture.OutputIso | Should -BeFalse
     }
 
     It 'plants unsupported-media and stale-path negatives before durable output' {
