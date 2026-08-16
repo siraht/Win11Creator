@@ -354,8 +354,12 @@ Describe 'Installed acceptance harness' {
 
         $probeText | Should -Match 'WinUtilDeveloperAcceptance_'
         $probeText | Should -Match 'WaitForExit\(\$TimeoutSeconds \* 1000\)'
+        $probeText | Should -Match 'taskkill\.exe /PID \$process\.Id /T /F'
+        $probeText | Should -Match 'process tree did not exit after taskkill'
         $probeText | Should -Match "@\('init', '--quiet'\)"
         $probeText | Should -Match "@\('commit', '--quiet', '-m', 'acceptance smoke'\)"
+        $probeText | Should -Match ([regex]::Escape('@(''cat-file'', ''-e'', "$head^{commit}")'))
+        $probeText | Should -Match '\{40\}\|\[0-9a-f\]\{64\}'
         $probeText | Should -Match "pwsh\.exe @\('-NoProfile', '-NonInteractive', '-File'"
         $probeText | Should -Match "node\.exe @\('--check'"
         $probeText | Should -Match "bun\.exe @\('build'"

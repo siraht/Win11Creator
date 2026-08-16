@@ -331,9 +331,11 @@ internal static class WinUtilWerCrash_$token {
                 $process = Start-Process -FilePath $FilePath -ArgumentList $escapedArguments -WorkingDirectory $WorkingDirectory `
                     -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath -WindowStyle Hidden -PassThru -ErrorAction Stop
                 if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
-                    $process.Kill()
-                    $process.WaitForExit()
-                    throw "$Label timed out after $TimeoutSeconds seconds."
+                    $termination = & taskkill.exe /PID $process.Id /T /F 2>&1 | Out-String
+                    if (-not $process.WaitForExit(10000)) {
+                        throw "$Label timed out after $TimeoutSeconds seconds and its process tree did not exit after taskkill: $($termination.Trim())"
+                    }
+                    throw "$Label timed out after $TimeoutSeconds seconds; terminated process tree pid=$($process.Id): $($termination.Trim())"
                 }
                 $stdout = if (Test-Path -LiteralPath $stdoutPath) { (Get-Content -LiteralPath $stdoutPath -Raw -ErrorAction Stop).Trim() } else { '' }
                 $stderr = if (Test-Path -LiteralPath $stderrPath) { (Get-Content -LiteralPath $stderrPath -Raw -ErrorAction Stop).Trim() } else { '' }
@@ -362,8 +364,9 @@ internal static class WinUtilWerCrash_$token {
                     Invoke-DeveloperProcess git.exe @('add', '--', 'probe.txt') $gitRoot 'git-add' | Out-Null
                     Invoke-DeveloperProcess git.exe @('commit', '--quiet', '-m', 'acceptance smoke') $gitRoot 'git-commit' | Out-Null
                     $head = (Invoke-DeveloperProcess git.exe @('rev-parse', 'HEAD') $gitRoot 'git-head').Stdout
+                    Invoke-DeveloperProcess git.exe @('cat-file', '-e', "$head^{commit}") $gitRoot 'git-object' | Out-Null
                     $status = (Invoke-DeveloperProcess git.exe @('status', '--porcelain') $gitRoot 'git-status').Stdout
-                    if ($head -notmatch '^[0-9a-f]{40}$' -or $status -ne '') { throw "Git repository validation failed (head='$head', status='$status')." }
+                    if ($head -notmatch '^(?:[0-9a-f]{40}|[0-9a-f]{64})$' -or $status -ne '') { throw "Git repository validation failed (head='$head', status='$status')." }
                     "Git repository initialized and committed; head=$head; status=clean"
                 }
                 Add-DeveloperProbeResult 'developer.powershell' {
