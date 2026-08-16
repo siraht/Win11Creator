@@ -119,6 +119,28 @@ Describe 'Installed acceptance harness' {
         ($result.Document.Results | Where-Object Id -eq 'servicing.dism-checkhealth').Status | Should -Be 'Fail'
     }
 
+    It 'InstalledAcceptance_ReleaseScanHealthRequiresExplicitHealthyEvidence_PlantedNegative' -ForEach @(
+        @{ Evidence = 'The component store corruption was detected.'; Label = 'corrupt' },
+        @{ Evidence = 'The operation completed successfully.'; Label = 'missing-health-state' }
+    ) {
+        $provider = New-AcceptanceProbeProvider -Mode LeanDaw
+        $baseCommand = $provider.Command
+        $provider.Command = {
+            param ($FilePath, $ArgumentList)
+            if ($FilePath -eq 'dism.exe' -and $ArgumentList -contains '/ScanHealth') {
+                [pscustomobject]@{ Success = $true; Evidence = $Evidence; ExitCode = 0 }
+            } else {
+                & $baseCommand $FilePath $ArgumentList
+            }
+        }.GetNewClosure()
+        $result = Invoke-WinUtilInstalledAcceptance -ExpectedState LeanDaw -Depth Release -OutputPath (Join-Path $TestDrive "scanhealth-$Label.json") `
+            -AbletonPath 'C:\ProgramData\Ableton\Live.exe' -Vst3Path @('C:\Program Files\Common Files\VST3\Vendor.vst3') `
+            -LatencyMonReportPath 'C:\Evidence\latencymon.txt' -SmokeCommand 'exit 0' -PostLoginSmokeCommand 'exit 0' -ProbeProvider $provider
+
+        $result.ExitCode | Should -Be 1
+        ($result.Document.Results | Where-Object Id -eq 'servicing.dism-scanhealth').Status | Should -Be 'Fail'
+    }
+
     It 'InstalledAcceptance_DisabledUpdateInfrastructure_PlantedNegative' {
         $provider = New-AcceptanceProbeProvider
         $provider.Service = {
