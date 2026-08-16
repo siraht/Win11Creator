@@ -132,24 +132,31 @@ Describe 'Production Windows image metadata lookup' {
 }
 
 Describe 'Production oscdimg process boundary' {
-    It 'treats native stderr as captured evidence when the process exits successfully' {
+    It 'keeps real native stderr but removes blank error-record artifacts on success' {
         $provider = Get-WinUtilWindowsBuildProvider
         $pwsh = (Get-Command pwsh -ErrorAction Stop).Source
 
-        $result = & $provider.CreateIso $pwsh @('-NoProfile', '-Command', '[Console]::Error.WriteLine("progress on stderr"); exit 0')
+        $result = & $provider.CreateIso $pwsh @(
+            '-NoProfile', '-Command',
+            '[Console]::Error.WriteLine(""); [Console]::Error.WriteLine("progress on stderr"); [Console]::Out.WriteLine(""); exit 0'
+        )
 
         $result.ExitCode | Should -Be 0
-        @($result.Output | ForEach-Object { [string]$_ }) -join "`n" | Should -Match 'progress on stderr'
+        $result.Output | Should -Be @('progress on stderr')
+        @($result.Output | ForEach-Object { [string]$_ }) -join "`n" | Should -Not -Match 'System\.Management\.Automation\.(RemoteException|ErrorRecord)'
     }
 
-    It 'preserves native stderr and the nonzero process exit code together' {
+    It 'preserves meaningful native stderr and the nonzero process exit code together' {
         $provider = Get-WinUtilWindowsBuildProvider
         $pwsh = (Get-Command pwsh -ErrorAction Stop).Source
 
-        $result = & $provider.CreateIso $pwsh @('-NoProfile', '-Command', '[Console]::Error.WriteLine("planted packaging failure"); exit 23')
+        $result = & $provider.CreateIso $pwsh @(
+            '-NoProfile', '-Command',
+            '[Console]::Error.WriteLine(""); [Console]::Error.WriteLine("planted packaging failure"); [Console]::Error.WriteLine(""); exit 23'
+        )
 
         $result.ExitCode | Should -Be 23
-        @($result.Output | ForEach-Object { [string]$_ }) -join "`n" | Should -Match 'planted packaging failure'
+        $result.Output | Should -Be @('planted packaging failure')
     }
 }
 

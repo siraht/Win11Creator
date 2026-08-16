@@ -85,11 +85,21 @@ function Get-WinUtilWindowsBuildProvider {
                 # Native tools commonly write progress to stderr. Capture it as evidence and
                 # decide success from the process exit code instead of PowerShell's adapter.
                 $ErrorActionPreference = 'Continue'
-                $output = @(& $executable @arguments 2>&1)
+                $nativeOutput = @(& $executable @arguments 2>&1)
                 $exitCode = $LASTEXITCODE
             } finally {
                 $ErrorActionPreference = $previousErrorActionPreference
             }
+            $output = @(
+                foreach ($record in $nativeOutput) {
+                    $text = if ($record -is [System.Management.Automation.ErrorRecord]) {
+                        [string]$record.Exception.Message
+                    } else {
+                        [string]$record
+                    }
+                    if (-not [string]::IsNullOrWhiteSpace($text)) { $text.TrimEnd() }
+                }
+            )
             [pscustomobject]@{ ExitCode = $exitCode; Output = $output }
         }
         PublishArtifact = {
