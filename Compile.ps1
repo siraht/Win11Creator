@@ -33,6 +33,7 @@ Get-ChildItem config | ForEach-Object {
 
 $componentPolicy = [ordered]@{
     schema = Get-Content -Path policy\component-policy.schema.json -Raw | ConvertFrom-Json
+    presetSchema = Get-Content -Path policy\component-preset.schema.json -Raw | ConvertFrom-Json
     catalog = Get-Content -Path policy\component-catalog.json -Raw | ConvertFrom-Json
     profiles = [ordered]@{}
 }
