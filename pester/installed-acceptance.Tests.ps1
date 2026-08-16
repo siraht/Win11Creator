@@ -84,7 +84,7 @@ Describe 'Installed acceptance harness' {
         Test-Path -LiteralPath ([IO.Path]::ChangeExtension($output, '.log')) | Should -BeTrue
         $document = Get-Content -LiteralPath $output -Raw | ConvertFrom-Json
         $document.SchemaVersion | Should -Be '1.0'
-        $document.HarnessVersion | Should -Be '1.6.0'
+        $document.HarnessVersion | Should -Be '1.7.0'
         $document.Results.Id | Should -Contain 'servicing.dism-checkhealth'
         $document.Results.Id | Should -Contain 'developer.directml'
         ($document.Results | Where-Object Id -eq 'servicing.dism-scanhealth').Status | Should -Be 'NotRun'
@@ -266,7 +266,9 @@ Describe 'Installed acceptance harness' {
         @{ Label = 'install-failed'; Value = @{ Outcome = 'Installed'; SearchResultCode = 2; ApplicableCount = 1; Title = 'Update'; KBArticleIDs = @(); DownloadResultCode = 2; InstallResultCode = 4; UpdateResultCode = 2; HResult = 0; RebootRequired = $false; Evidence = 'process exit=0'; Success = $true } },
         @{ Label = 'per-update-failed'; Value = @{ Outcome = 'Installed'; SearchResultCode = 2; ApplicableCount = 1; Title = 'Update'; KBArticleIDs = @(); DownloadResultCode = 2; InstallResultCode = 2; UpdateResultCode = 4; HResult = -2145124329; RebootRequired = $false; Evidence = 'process exit=0'; Success = $true } },
         @{ Label = 'failed-hresult'; Value = @{ Outcome = 'Installed'; SearchResultCode = 2; ApplicableCount = 1; Title = 'Update'; KBArticleIDs = @(); DownloadResultCode = 2; InstallResultCode = 2; UpdateResultCode = 2; HResult = -2145124329; RebootRequired = $false; Evidence = 'process exit=0'; Success = $true } },
-        @{ Label = 'missing-hresult'; Value = @{ Outcome = 'Installed'; SearchResultCode = 2; ApplicableCount = 1; Title = 'Update'; KBArticleIDs = @(); DownloadResultCode = 2; InstallResultCode = 2; UpdateResultCode = 2; RebootRequired = $false; Evidence = 'process exit=0'; Success = $true } }
+        @{ Label = 'missing-hresult'; Value = @{ Outcome = 'Installed'; SearchResultCode = 2; ApplicableCount = 1; Title = 'Update'; KBArticleIDs = @(); DownloadResultCode = 2; InstallResultCode = 2; UpdateResultCode = 2; RebootRequired = $false; Evidence = 'process exit=0'; Success = $true } },
+        @{ Label = 'string-reboot'; Value = @{ Outcome = 'Installed'; SearchResultCode = 2; ApplicableCount = 1; Title = 'Update'; KBArticleIDs = @(); DownloadResultCode = 2; InstallResultCode = 2; UpdateResultCode = 2; HResult = 0; RebootRequired = 'false'; Evidence = 'process exit=0'; Success = $true } },
+        @{ Label = 'empty-evidence'; Value = @{ Outcome = 'ZeroApplicable'; SearchResultCode = 2; ApplicableCount = 0; RebootRequired = $false; Evidence = ' ' } }
     ) {
         $provider = New-AcceptanceProbeProvider -Mode LeanDaw
         $planted = $Value

@@ -418,12 +418,14 @@ function Invoke-WinUtilInstalledAcceptance {
     Test-Command 'update.scan' 'WindowsUpdate' $true 'powershell.exe' @('-NoProfile', '-NonInteractive', '-EncodedCommand', $encodedUpdateSearch) '(?m)^UpdateScan count=\d+ result=2$'
     if ($Depth -eq 'Release') {
         try {
-            $updateInstall = & $ProbeProvider.UpdateInstall
-            $hasRequiredFields = if ($null -eq $updateInstall) { @('result') } else {
-                @('Outcome', 'SearchResultCode', 'ApplicableCount', 'RebootRequired', 'Evidence') |
-                    Where-Object { -not $updateInstall.PSObject.Properties[$_] }
-            }
-            $valid = $null -ne $updateInstall -and @($hasRequiredFields).Count -eq 0 -and [int]$updateInstall.SearchResultCode -eq 2 -and [int]$updateInstall.ApplicableCount -ge 0
+            $updateInstallOutput = @(& $ProbeProvider.UpdateInstall)
+            if ($updateInstallOutput.Count -ne 1) { throw "UpdateInstall boundary returned $($updateInstallOutput.Count) results; expected exactly one." }
+            $updateInstall = $updateInstallOutput[0]
+            $hasRequiredFields = @('Outcome', 'SearchResultCode', 'ApplicableCount', 'RebootRequired', 'Evidence') |
+                Where-Object { $null -eq $updateInstall -or -not $updateInstall.PSObject.Properties[$_] }
+            $valid = $null -ne $updateInstall -and @($hasRequiredFields).Count -eq 0 -and
+                $updateInstall.RebootRequired -is [bool] -and -not [string]::IsNullOrWhiteSpace([string]$updateInstall.Evidence) -and
+                [int]$updateInstall.SearchResultCode -eq 2 -and [int]$updateInstall.ApplicableCount -ge 0
             if ($valid -and [string]$updateInstall.Outcome -eq 'ZeroApplicable') {
                 $valid = [int]$updateInstall.ApplicableCount -eq 0 -and -not [bool]$updateInstall.RebootRequired
             } elseif ($valid -and [string]$updateInstall.Outcome -eq 'Installed') {
@@ -595,7 +597,7 @@ function Invoke-WinUtilInstalledAcceptance {
     $failedRequired = @($results | Where-Object { $_.Required -and $_.Status -ne 'Pass' })
     $document = [pscustomobject][ordered]@{
         SchemaVersion = '1.0'
-        HarnessVersion = '1.6.0'
+        HarnessVersion = '1.7.0'
         TimestampUtc = [DateTime]::UtcNow.ToString('o')
         ExpectedState = $ExpectedState
         Depth = $Depth
