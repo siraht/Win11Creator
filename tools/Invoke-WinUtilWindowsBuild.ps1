@@ -2,7 +2,7 @@
 param (
     [string]$SourceIsoPath,
     [ValidateRange(1, 2147483647)][int]$ImageIndex = 1,
-    [Alias('Profile')][ValidateSet('default-winutil', 'lean-daw')][string]$ComponentProfile,
+    [Alias('Profile')][ValidateSet('default-winutil', 'lean-daw', 'lean-daw-defender-retained')][string]$ComponentProfile,
     [string]$OutputIsoPath,
     [string]$WorkDirectory,
     [string]$OscdimgPath,
@@ -130,7 +130,7 @@ function Invoke-WinUtilWindowsBuild {
     param (
         [Parameter(Mandatory)][string]$SourceIsoPath,
         [Parameter(Mandatory)][ValidateRange(1, 2147483647)][int]$ImageIndex,
-        [Parameter(Mandatory)][Alias('Profile')][ValidateSet('default-winutil', 'lean-daw')][string]$ComponentProfile,
+        [Parameter(Mandatory)][Alias('Profile')][ValidateSet('default-winutil', 'lean-daw', 'lean-daw-defender-retained')][string]$ComponentProfile,
         [Parameter(Mandatory)][string]$OutputIsoPath,
         [Parameter(Mandatory)][string]$WorkDirectory,
         [Parameter(Mandatory)][string]$OscdimgPath,
