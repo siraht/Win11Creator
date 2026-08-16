@@ -286,6 +286,24 @@ Describe 'Installed acceptance harness' {
         $nfsResult.Evidence | Should -Be $Evidence
     }
 
+    It 'InstalledAcceptance_MalformedNfsResultFailsClosed_PlantedNegative' -ForEach @(
+        @{ Result = $null; Expected = 'Boolean Success' },
+        @{ Result = @([pscustomobject]@{ Success = $true; Evidence = 'one' }, [pscustomobject]@{ Success = $true; Evidence = 'two' }); Expected = 'returned 2 results' },
+        @{ Result = [pscustomobject]@{ Success = 'false'; Evidence = 'not Boolean' }; Expected = 'Boolean Success' },
+        @{ Result = [pscustomobject]@{ Success = $true; Evidence = ' ' }; Expected = 'nonempty Evidence' }
+    ) {
+        $provider = New-AcceptanceProbeProvider -Mode LeanDaw
+        $provider.NfsFunctional = { $Result }.GetNewClosure()
+        $result = Invoke-WinUtilInstalledAcceptance -ExpectedState LeanDaw -Depth Release -OutputPath (Join-Path $TestDrive "nfs-malformed-$([Guid]::NewGuid().ToString('N')).json") `
+            -AbletonPath 'C:\ProgramData\Ableton\Live.exe' -Vst3Path @('C:\Program Files\Common Files\VST3\Vendor.vst3') `
+            -LatencyMonReportPath 'C:\Evidence\latencymon.txt' -SmokeCommand 'exit 0' -PostLoginSmokeCommand 'exit 0' -ProbeProvider $provider
+
+        $result.ExitCode | Should -Be 1
+        $nfsResult = $result.Document.Results | Where-Object Id -eq 'protected.nfs-functional'
+        $nfsResult.Status | Should -Be 'Fail'
+        $nfsResult.Evidence | Should -Match $Expected
+    }
+
     It 'InstalledAcceptance_QuickDoesNotRunFunctionalNfsProbe' {
         $provider = New-AcceptanceProbeProvider
         $provider.NfsFunctional = { throw 'Quick mode must not mutate NFS state.' }

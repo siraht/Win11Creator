@@ -453,7 +453,15 @@ function Invoke-WinUtilInstalledAcceptance {
     }
     if ($Depth -eq 'Release') {
         try {
-            $nfsProbe = & $ProbeProvider.NfsFunctional
+            $nfsProbeOutput = @(& $ProbeProvider.NfsFunctional)
+            if ($nfsProbeOutput.Count -ne 1) { throw "NfsFunctional boundary returned $($nfsProbeOutput.Count) results; expected exactly one." }
+            $nfsProbe = $nfsProbeOutput[0]
+            if ($null -eq $nfsProbe -or $nfsProbe.PSObject.Properties['Success'] -eq $null -or $nfsProbe.Success -isnot [bool]) {
+                throw 'NfsFunctional boundary must return one result with a Boolean Success property.'
+            }
+            if ($nfsProbe.PSObject.Properties['Evidence'] -eq $null -or [string]::IsNullOrWhiteSpace([string]$nfsProbe.Evidence)) {
+                throw 'NfsFunctional boundary must return nonempty Evidence.'
+            }
             Add-AcceptanceResult 'protected.nfs-functional' 'Protected' $true $(if ($nfsProbe.Success) { 'Pass' } else { 'Fail' }) ([string]$nfsProbe.Evidence)
         } catch { Add-AcceptanceResult 'protected.nfs-functional' 'Protected' $true 'Fail' $_.Exception.Message }
     } else {
