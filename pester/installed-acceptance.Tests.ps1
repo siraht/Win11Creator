@@ -61,6 +61,7 @@ BeforeAll {
             }.GetNewClosure()
             Registration = { param ($Target) [pscustomobject]@{ Present = $true; Evidence = "registration=$Target" } }
             WerCrash = { [pscustomobject]@{ Success = $true; Evidence = 'Controlled crash exit=-1073740791; WER dump=WinUtilWerCrash.dmp bytes=4096' } }
+            NfsFunctional = { [pscustomobject]@{ Success = $true; Evidence = 'Enabled and queried NFS client; service=Running; nfsadmin exit=0; changedFeatures=ServicesForNFS-ClientOnly' } }
         }
     }
 }
@@ -76,13 +77,16 @@ Describe 'Installed acceptance harness' {
         Test-Path -LiteralPath ([IO.Path]::ChangeExtension($output, '.log')) | Should -BeTrue
         $document = Get-Content -LiteralPath $output -Raw | ConvertFrom-Json
         $document.SchemaVersion | Should -Be '1.0'
-        $document.HarnessVersion | Should -Be '1.5.0'
+        $document.HarnessVersion | Should -Be '1.6.0'
         $document.Results.Id | Should -Contain 'servicing.dism-checkhealth'
         $document.Results.Id | Should -Contain 'developer.directml'
         ($document.Results | Where-Object Id -eq 'servicing.dism-scanhealth').Status | Should -Be 'NotRun'
         $werResult = $document.Results | Where-Object Id -eq 'protected.wer-crashdump'
         $werResult.Status | Should -Be 'NotRun'
         $werResult.Required | Should -BeFalse
+        $nfsResult = $document.Results | Where-Object Id -eq 'protected.nfs-functional'
+        $nfsResult.Status | Should -Be 'NotRun'
+        $nfsResult.Required | Should -BeFalse
     }
 
     It 'InstalledAcceptance_LeanExpectedStateCoversDeclaredAndProtectedTargets' {
@@ -247,6 +251,63 @@ Describe 'Installed acceptance harness' {
         $werResult.Evidence | Should -Match 'no nonempty WER local dump'
     }
 
+    It 'InstalledAcceptance_ReleaseRunsRequiredFunctionalNfsProbe' {
+        $provider = New-AcceptanceProbeProvider -Mode LeanDaw
+        $capture = [pscustomobject]@{ Calls = 0 }
+        $provider.NfsFunctional = {
+            $capture.Calls++
+            [pscustomobject]@{ Success = $true; Evidence = 'Enabled and queried NFS client; service=Running; nfsadmin exit=0' }
+        }.GetNewClosure()
+        $result = Invoke-WinUtilInstalledAcceptance -ExpectedState LeanDaw -Depth Release -OutputPath (Join-Path $TestDrive 'nfs-release.json') `
+            -AbletonPath 'C:\ProgramData\Ableton\Live.exe' -Vst3Path @('C:\Program Files\Common Files\VST3\Vendor.vst3') `
+            -LatencyMonReportPath 'C:\Evidence\latencymon.txt' -SmokeCommand 'exit 0' -PostLoginSmokeCommand 'exit 0' -ProbeProvider $provider
+
+        $capture.Calls | Should -Be 1
+        $nfsResult = $result.Document.Results | Where-Object Id -eq 'protected.nfs-functional'
+        $nfsResult.Required | Should -BeTrue
+        $nfsResult.Status | Should -Be 'Pass'
+    }
+
+    It 'InstalledAcceptance_NfsEnableUseOrCleanupFailureIsBlocking_PlantedNegative' -ForEach @(
+        @{ Evidence = 'NFS feature did not reach Enabled.'; Label = 'enable' },
+        @{ Evidence = 'nfsadmin client failed with exit code 2.'; Label = 'use' },
+        @{ Evidence = 'Enabled and queried NFS client; cleanup failed: restore NFS-Administration expected Disabled, found Enabled'; Label = 'cleanup' }
+    ) {
+        $provider = New-AcceptanceProbeProvider -Mode LeanDaw
+        $provider.NfsFunctional = { [pscustomobject]@{ Success = $false; Evidence = $Evidence } }.GetNewClosure()
+        $result = Invoke-WinUtilInstalledAcceptance -ExpectedState LeanDaw -Depth Release -OutputPath (Join-Path $TestDrive "nfs-$Label.json") `
+            -AbletonPath 'C:\ProgramData\Ableton\Live.exe' -Vst3Path @('C:\Program Files\Common Files\VST3\Vendor.vst3') `
+            -LatencyMonReportPath 'C:\Evidence\latencymon.txt' -SmokeCommand 'exit 0' -PostLoginSmokeCommand 'exit 0' -ProbeProvider $provider
+
+        $result.ExitCode | Should -Be 1
+        $nfsResult = $result.Document.Results | Where-Object Id -eq 'protected.nfs-functional'
+        $nfsResult.Required | Should -BeTrue
+        $nfsResult.Status | Should -Be 'Fail'
+        $nfsResult.Evidence | Should -Be $Evidence
+    }
+
+    It 'InstalledAcceptance_QuickDoesNotRunFunctionalNfsProbe' {
+        $provider = New-AcceptanceProbeProvider
+        $provider.NfsFunctional = { throw 'Quick mode must not mutate NFS state.' }
+        $result = Invoke-WinUtilInstalledAcceptance -ExpectedState StockControl -Depth Quick -OutputPath (Join-Path $TestDrive 'nfs-quick.json') -ProbeProvider $provider
+
+        $result.ExitCode | Should -Be 0
+        ($result.Document.Results | Where-Object Id -eq 'protected.nfs-functional').Status | Should -Be 'NotRun'
+    }
+
+    It 'InstalledAcceptance_ProductionNfsProbeIsFunctionalAndReversible' {
+        $provider = Get-WinUtilInstalledProbeProvider
+        $probeText = $provider.NfsFunctional.ToString()
+
+        $probeText | Should -Match 'Enable-WindowsOptionalFeature'
+        $probeText | Should -Match 'Start-Service -Name ''NfsClnt'''
+        $probeText | Should -Match 'WaitForExit\(30000\)'
+        $probeText | Should -Match "ArgumentList @\('client'\)"
+        $probeText | Should -Match 'Disable-WindowsOptionalFeature'
+        $probeText | Should -Match 'expected \$\(\$initialStates\[\$featureName\]\), found'
+        $probeText | Should -Match 'Remove-Item -LiteralPath \$probeRoot'
+    }
+
     It 'InstalledAcceptance_QuickDoesNotRunControlledWerCrash' {
         $provider = New-AcceptanceProbeProvider
         $provider.WerCrash = { throw 'Quick mode must not trigger a controlled crash.' }
@@ -279,6 +340,13 @@ Describe 'Installed acceptance harness' {
         $provider.Remove('WerCrash')
         { Invoke-WinUtilInstalledAcceptance -OutputPath (Join-Path $TestDrive 'bad-wer.json') -ProbeProvider $provider } |
             Should -Throw "*boundary 'WerCrash' must be a scriptblock*"
+    }
+
+    It 'InstalledAcceptance_MissingNfsBoundary_PlantedNegative' {
+        $provider = New-AcceptanceProbeProvider
+        $provider.Remove('NfsFunctional')
+        { Invoke-WinUtilInstalledAcceptance -OutputPath (Join-Path $TestDrive 'bad-nfs.json') -ProbeProvider $provider } |
+            Should -Throw "*boundary 'NfsFunctional' must be a scriptblock*"
     }
 
     It 'InstalledAcceptance_StockOptionalSourceAbsenceDoesNotBlock' {

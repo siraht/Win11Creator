@@ -168,6 +168,104 @@ internal static class WinUtilWerCrash_$token {
                 $probeResult
             }
         }
+        NfsFunctional = {
+            $featureNames = @('ServicesForNFS-ClientOnly', 'ClientForNFS-Infrastructure', 'NFS-Administration')
+            $initialStates = @{}
+            $enabledByProbe = [System.Collections.Generic.List[string]]::new()
+            $serviceStartedByProbe = $false
+            $probeRoot = Join-Path ([IO.Path]::GetTempPath()) "WinUtilNfsAcceptance_$([Guid]::NewGuid().ToString('N'))"
+            $process = $null
+            $probeResult = $null
+            $cleanupErrors = [System.Collections.Generic.List[string]]::new()
+            try {
+                foreach ($featureName in $featureNames) {
+                    $feature = Get-WindowsOptionalFeature -Online -FeatureName $featureName -ErrorAction Stop
+                    $initialStates[$featureName] = [string]$feature.State
+                    if ([string]$feature.State -match 'Removed') {
+                        throw "NFS feature '$featureName' has no retained payload (state=$($feature.State))."
+                    }
+                    if ([string]$feature.State -notin @('Enabled', 'Disabled')) {
+                        throw "NFS feature '$featureName' has an unsupported transitional state '$($feature.State)'."
+                    }
+                    if ([string]$feature.State -eq 'Disabled') { $enabledByProbe.Add($featureName) }
+                }
+
+                if ($enabledByProbe.Count -gt 0) {
+                    $enable = Enable-WindowsOptionalFeature -Online -FeatureName @($enabledByProbe) -All -NoRestart -ErrorAction Stop
+                    if (@($enable | Where-Object RestartNeeded).Count -gt 0) {
+                        throw 'NFS enablement requires a restart, so this run cannot prove functional use.'
+                    }
+                }
+                foreach ($featureName in $featureNames) {
+                    $enabledFeature = Get-WindowsOptionalFeature -Online -FeatureName $featureName -ErrorAction Stop
+                    if ([string]$enabledFeature.State -ne 'Enabled') {
+                        throw "NFS feature '$featureName' did not reach Enabled (state=$($enabledFeature.State))."
+                    }
+                }
+
+                $clientService = Get-Service -Name 'NfsClnt' -ErrorAction Stop
+                if ([string]$clientService.Status -ne 'Running') {
+                    Start-Service -Name 'NfsClnt' -ErrorAction Stop
+                    $serviceStartedByProbe = $true
+                    $clientService = Get-Service -Name 'NfsClnt' -ErrorAction Stop
+                }
+                if ([string]$clientService.Status -ne 'Running') { throw 'NFS client service did not reach Running.' }
+
+                $nfsAdmin = Join-Path $env:SystemRoot 'System32\nfsadmin.exe'
+                if (-not (Test-Path -LiteralPath $nfsAdmin -PathType Leaf)) { throw "NFS administration command is missing at '$nfsAdmin'." }
+                New-Item -Path $probeRoot -ItemType Directory -ErrorAction Stop | Out-Null
+                $stdoutPath = Join-Path $probeRoot 'nfsadmin.stdout.txt'
+                $stderrPath = Join-Path $probeRoot 'nfsadmin.stderr.txt'
+                $process = Start-Process -FilePath $nfsAdmin -ArgumentList @('client') -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath -PassThru -WindowStyle Hidden -ErrorAction Stop
+                if (-not $process.WaitForExit(30000)) {
+                    $process.Kill()
+                    $process.WaitForExit()
+                    throw 'nfsadmin client did not exit within 30 seconds.'
+                }
+                $exitCode = $process.ExitCode
+                $output = @(
+                    if (Test-Path -LiteralPath $stdoutPath) { Get-Content -LiteralPath $stdoutPath -Raw -ErrorAction Stop }
+                    if (Test-Path -LiteralPath $stderrPath) { Get-Content -LiteralPath $stderrPath -Raw -ErrorAction Stop }
+                ) -join [Environment]::NewLine
+                if ($exitCode -ne 0) { throw "nfsadmin client failed with exit code $exitCode`: $($output.Trim())" }
+                if ([string]::IsNullOrWhiteSpace($output)) { throw 'nfsadmin client returned no functional evidence.' }
+                $probeResult = [pscustomobject]@{
+                    Success = $true
+                    Evidence = "Enabled and queried NFS client; service=$($clientService.Status); nfsadmin exit=$exitCode; changedFeatures=$($enabledByProbe -join ','); output=$($output.Trim())"
+                }
+            } catch {
+                $probeResult = [pscustomobject]@{ Success = $false; Evidence = $_.Exception.Message }
+            } finally {
+                if ($process -and -not $process.HasExited) {
+                    try { $process.Kill(); $process.WaitForExit() } catch { $cleanupErrors.Add("stop nfsadmin: $($_.Exception.Message)") }
+                }
+                if ($serviceStartedByProbe) {
+                    try { Stop-Service -Name 'NfsClnt' -Force -ErrorAction Stop } catch { $cleanupErrors.Add("stop NfsClnt: $($_.Exception.Message)") }
+                }
+                for ($featureIndex = $enabledByProbe.Count - 1; $featureIndex -ge 0; $featureIndex--) {
+                    $featureName = $enabledByProbe[$featureIndex]
+                    try {
+                        Disable-WindowsOptionalFeature -Online -FeatureName $featureName -NoRestart -ErrorAction Stop | Out-Null
+                    } catch { $cleanupErrors.Add("disable ${featureName}: $($_.Exception.Message)") }
+                }
+                foreach ($featureName in $initialStates.Keys) {
+                    try {
+                        $restored = Get-WindowsOptionalFeature -Online -FeatureName $featureName -ErrorAction Stop
+                        if ([string]$restored.State -ne [string]$initialStates[$featureName]) {
+                            $cleanupErrors.Add("restore ${featureName}: expected $($initialStates[$featureName]), found $($restored.State)")
+                        }
+                    } catch { $cleanupErrors.Add("verify ${featureName}: $($_.Exception.Message)") }
+                }
+                if (Test-Path -LiteralPath $probeRoot) {
+                    try { Remove-Item -LiteralPath $probeRoot -Recurse -Force -ErrorAction Stop } catch { $cleanupErrors.Add("remove probe files: $($_.Exception.Message)") }
+                }
+            }
+            if ($cleanupErrors.Count -gt 0) {
+                [pscustomobject]@{ Success = $false; Evidence = "$($probeResult.Evidence); cleanup failed: $($cleanupErrors -join '; ')" }
+            } else {
+                $probeResult
+            }
+        }
     }
 }
 
@@ -186,7 +284,7 @@ function Invoke-WinUtilInstalledAcceptance {
     )
 
     if (-not $ProbeProvider) { $ProbeProvider = Get-WinUtilInstalledProbeProvider }
-    foreach ($boundary in @('Command', 'Registry', 'Appx', 'Service', 'Feature', 'Package', 'SystemApp', 'Task', 'File', 'Registration', 'WerCrash')) {
+    foreach ($boundary in @('Command', 'Registry', 'Appx', 'Service', 'Feature', 'Package', 'SystemApp', 'Task', 'File', 'Registration', 'WerCrash', 'NfsFunctional')) {
         if (-not $ProbeProvider.ContainsKey($boundary) -or $ProbeProvider[$boundary] -isnot [scriptblock]) {
             throw "ProbeProvider boundary '$boundary' must be a scriptblock."
         }
@@ -353,6 +451,14 @@ function Invoke-WinUtilInstalledAcceptance {
     foreach ($featureName in @('ServicesForNFS-ClientOnly', 'Microsoft-Windows-Subsystem-Linux', 'VirtualMachinePlatform', 'Microsoft-Hyper-V-All')) {
         Test-Presence "protected.feature.$($featureName.ToLowerInvariant())" 'Protected' $true 'Feature' @($featureName) $true
     }
+    if ($Depth -eq 'Release') {
+        try {
+            $nfsProbe = & $ProbeProvider.NfsFunctional
+            Add-AcceptanceResult 'protected.nfs-functional' 'Protected' $true $(if ($nfsProbe.Success) { 'Pass' } else { 'Fail' }) ([string]$nfsProbe.Evidence)
+        } catch { Add-AcceptanceResult 'protected.nfs-functional' 'Protected' $true 'Fail' $_.Exception.Message }
+    } else {
+        Add-AcceptanceResult 'protected.nfs-functional' 'Protected' $false 'NotRun' 'Release-depth reversible NFS client probe.'
+    }
     foreach ($serviceName in @('WerSvc', 'PcaSvc', 'SysMain')) {
         Test-ServiceAvailability "protected.service.$($serviceName.ToLowerInvariant())" 'Protected' $true $serviceName $true
     }
@@ -411,7 +517,7 @@ function Invoke-WinUtilInstalledAcceptance {
     $failedRequired = @($results | Where-Object { $_.Required -and $_.Status -ne 'Pass' })
     $document = [pscustomobject][ordered]@{
         SchemaVersion = '1.0'
-        HarnessVersion = '1.5.0'
+        HarnessVersion = '1.6.0'
         TimestampUtc = [DateTime]::UtcNow.ToString('o')
         ExpectedState = $ExpectedState
         Depth = $Depth
