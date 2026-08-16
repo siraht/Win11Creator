@@ -131,6 +131,28 @@ Describe 'Production Windows image metadata lookup' {
     }
 }
 
+Describe 'Production oscdimg process boundary' {
+    It 'treats native stderr as captured evidence when the process exits successfully' {
+        $provider = Get-WinUtilWindowsBuildProvider
+        $pwsh = (Get-Command pwsh -ErrorAction Stop).Source
+
+        $result = & $provider.CreateIso $pwsh @('-NoProfile', '-Command', '[Console]::Error.WriteLine("progress on stderr"); exit 0')
+
+        $result.ExitCode | Should -Be 0
+        @($result.Output | ForEach-Object { [string]$_ }) -join "`n" | Should -Match 'progress on stderr'
+    }
+
+    It 'preserves native stderr and the nonzero process exit code together' {
+        $provider = Get-WinUtilWindowsBuildProvider
+        $pwsh = (Get-Command pwsh -ErrorAction Stop).Source
+
+        $result = & $provider.CreateIso $pwsh @('-NoProfile', '-Command', '[Console]::Error.WriteLine("planted packaging failure"); exit 23')
+
+        $result.ExitCode | Should -Be 23
+        @($result.Output | ForEach-Object { [string]$_ }) -join "`n" | Should -Match 'planted packaging failure'
+    }
+}
+
 Describe 'Noninteractive Windows ISO build orchestration' {
     It 'maps official Enterprise Evaluation media to its servicing edition identifier' {
         Get-WinUtilWindowsEditionId -ImageName 'Windows 11 Enterprise Evaluation' | Should -Be 'EnterpriseEval'
@@ -228,6 +250,17 @@ Describe 'Noninteractive Windows ISO build orchestration' {
         { Invoke-WinUtilWindowsBuild -SourceIsoPath $fixture.SourceIso -ImageIndex 6 -Profile default-winutil `
             -OutputIsoPath $fixture.OutputIso -WorkDirectory $fixture.Work -OscdimgPath $fixture.Oscdimg -BuildProvider $fixture.Provider } |
             Should -Throw $Expected
+
+        Test-Path -LiteralPath $fixture.OutputIso | Should -BeFalse
+        Test-Path -LiteralPath $fixture.Work | Should -BeFalse
+    }
+
+    It 'surfaces oscdimg output with a planted nonzero exit code' {
+        $fixture = New-NonInteractiveBuildFixture -OscdimgExitCode 9
+
+        { Invoke-WinUtilWindowsBuild -SourceIsoPath $fixture.SourceIso -ImageIndex 6 -Profile default-winutil `
+            -OutputIsoPath $fixture.OutputIso -WorkDirectory $fixture.Work -OscdimgPath $fixture.Oscdimg -BuildProvider $fixture.Provider } |
+            Should -Throw '*oscdimg failed with exit code 9*oscdimg fixture output*'
 
         Test-Path -LiteralPath $fixture.OutputIso | Should -BeFalse
         Test-Path -LiteralPath $fixture.Work | Should -BeFalse

@@ -80,8 +80,17 @@ function Get-WinUtilWindowsBuildProvider {
         }
         CreateIso = {
             param($executable, $arguments)
-            $output = @(& $executable @arguments 2>&1)
-            [pscustomobject]@{ ExitCode = $LASTEXITCODE; Output = $output }
+            $previousErrorActionPreference = $ErrorActionPreference
+            try {
+                # Native tools commonly write progress to stderr. Capture it as evidence and
+                # decide success from the process exit code instead of PowerShell's adapter.
+                $ErrorActionPreference = 'Continue'
+                $output = @(& $executable @arguments 2>&1)
+                $exitCode = $LASTEXITCODE
+            } finally {
+                $ErrorActionPreference = $previousErrorActionPreference
+            }
+            [pscustomobject]@{ ExitCode = $exitCode; Output = $output }
         }
         PublishArtifact = {
             param($output, $manifests, $log)
@@ -210,7 +219,13 @@ function Invoke-WinUtilWindowsBuild {
         $bootData = "2#p0,e,b`"$isoContents\boot\etfsboot.com`"#pEF,e,b`"$isoContents\efi\microsoft\boot\efisys.bin`""
         $oscdimgArguments = @('-m', '-o', '-u2', '-udfver102', "-bootdata:$bootData", '-lCTOS_MODIFIED', $isoContents, $OutputIsoPath)
         $isoResult = & $BuildProvider.CreateIso $OscdimgPath $oscdimgArguments
-        if ($null -eq $isoResult -or [int]$isoResult.ExitCode -ne 0) { throw "oscdimg failed with exit code $($isoResult.ExitCode)." }
+        if ($null -eq $isoResult -or $null -eq $isoResult.ExitCode) { throw 'oscdimg did not return an exit code.' }
+        $isoOutput = @($isoResult.Output | ForEach-Object { [string]$_ })
+        foreach ($line in $isoOutput) { & $log "oscdimg: $line" }
+        if ([int]$isoResult.ExitCode -ne 0) {
+            $outputEvidence = if ($isoOutput.Count -gt 0) { " Output: $($isoOutput -join [Environment]::NewLine)" } else { '' }
+            throw "oscdimg failed with exit code $($isoResult.ExitCode).$outputEvidence"
+        }
         if (-not (Test-Path -LiteralPath $OutputIsoPath -PathType Leaf) -or (Get-Item -LiteralPath $OutputIsoPath).Length -eq 0) {
             throw 'oscdimg reported success but the output ISO is missing or empty.'
         }
