@@ -101,6 +101,49 @@ function Get-WinUtilInstalledProbeProvider {
             if (-not $evidence) { $evidence = "$Target registration=$value" }
             [pscustomobject]@{ Present = $value; Evidence = $evidence }
         }
+        UpdateInstall = {
+            $session = New-Object -ComObject Microsoft.Update.Session
+            $search = $session.CreateUpdateSearcher().Search("IsInstalled=0 and IsHidden=0 and Type='Software'")
+            $searchResultCode = [int]$search.ResultCode
+            if ($searchResultCode -ne 2) { throw "Windows Update install search returned result code $searchResultCode." }
+
+            $applicableCount = [int]$search.Updates.Count
+            if ($applicableCount -eq 0) {
+                [pscustomobject][ordered]@{
+                    Outcome = 'ZeroApplicable'; SearchResultCode = $searchResultCode; ApplicableCount = 0
+                    Title = $null; KBArticleIDs = @(); DownloadResultCode = $null; InstallResultCode = $null
+                    UpdateResultCode = $null; HResult = $null; RebootRequired = $false
+                    Evidence = 'UpdateInstall outcome=ZeroApplicable searchResult=2 applicable=0 rebootRequired=False'
+                }
+                return
+            }
+
+            $update = $search.Updates.Item(0)
+            if (-not $update.EulaAccepted) { $update.AcceptEula() }
+            $selection = New-Object -ComObject Microsoft.Update.UpdateColl
+            [void]$selection.Add($update)
+            $downloader = $session.CreateUpdateDownloader()
+            $downloader.Updates = $selection
+            $download = $downloader.Download()
+            $downloadResultCode = [int]$download.ResultCode
+            if ($downloadResultCode -ne 2) { throw "Windows Update download returned result code $downloadResultCode for '$($update.Title)'." }
+
+            $installer = $session.CreateUpdateInstaller()
+            $installer.Updates = $selection
+            $install = $installer.Install()
+            $updateResult = $install.GetUpdateResult(0)
+            $installResultCode = [int]$install.ResultCode
+            $updateResultCode = [int]$updateResult.ResultCode
+            $hResult = [int]$updateResult.HResult
+            $rebootRequired = [bool]$install.RebootRequired
+            [pscustomobject][ordered]@{
+                Outcome = 'Installed'; SearchResultCode = $searchResultCode; ApplicableCount = $applicableCount
+                Title = [string]$update.Title; KBArticleIDs = @($update.KBArticleIDs)
+                DownloadResultCode = $downloadResultCode; InstallResultCode = $installResultCode
+                UpdateResultCode = $updateResultCode; HResult = $hResult; RebootRequired = $rebootRequired
+                Evidence = "UpdateInstall outcome=Installed searchResult=$searchResultCode applicable=$applicableCount downloadResult=$downloadResultCode installResult=$installResultCode updateResult=$updateResultCode hresult=$hResult rebootRequired=$rebootRequired title=$($update.Title) kb=$(@($update.KBArticleIDs) -join ',')"
+            }
+        }
         WerCrash = {
             $token = [Guid]::NewGuid().ToString('N')
             $probeRoot = Join-Path ([IO.Path]::GetTempPath()) "WinUtilWerAcceptance_$token"
@@ -284,7 +327,7 @@ function Invoke-WinUtilInstalledAcceptance {
     )
 
     if (-not $ProbeProvider) { $ProbeProvider = Get-WinUtilInstalledProbeProvider }
-    foreach ($boundary in @('Command', 'Registry', 'Appx', 'Service', 'Feature', 'Package', 'SystemApp', 'Task', 'File', 'Registration', 'WerCrash', 'NfsFunctional')) {
+    foreach ($boundary in @('Command', 'Registry', 'Appx', 'Service', 'Feature', 'Package', 'SystemApp', 'Task', 'File', 'Registration', 'UpdateInstall', 'WerCrash', 'NfsFunctional')) {
         if (-not $ProbeProvider.ContainsKey($boundary) -or $ProbeProvider[$boundary] -isnot [scriptblock]) {
             throw "ProbeProvider boundary '$boundary' must be a scriptblock."
         }
@@ -292,8 +335,10 @@ function Invoke-WinUtilInstalledAcceptance {
 
     $results = [System.Collections.Generic.List[object]]::new()
     function Add-AcceptanceResult {
-        param ([string]$Id, [string]$Area, [bool]$Required, [ValidateSet('Pass', 'Fail', 'NotRun')][string]$Status, [string]$Evidence)
-        $results.Add([pscustomobject][ordered]@{ Id = $Id; Area = $Area; Required = $Required; Status = $Status; Evidence = $Evidence })
+        param ([string]$Id, [string]$Area, [bool]$Required, [ValidateSet('Pass', 'Fail', 'NotRun')][string]$Status, [string]$Evidence, [object]$Details)
+        $result = [ordered]@{ Id = $Id; Area = $Area; Required = $Required; Status = $Status; Evidence = $Evidence }
+        if ($null -ne $Details) { $result.Details = $Details }
+        $results.Add([pscustomobject]$result)
     }
     function Test-Presence {
         param ([string]$Id, [string]$Area, [bool]$Required, [string]$Boundary, [object[]]$Arguments, [bool]$Expected)
@@ -369,6 +414,29 @@ function Invoke-WinUtilInstalledAcceptance {
     $updateSearchScript = '$session = New-Object -ComObject Microsoft.Update.Session; $search = $session.CreateUpdateSearcher().Search(''IsInstalled=0 and IsHidden=0''); if ([int]$search.ResultCode -ne 2) { throw "Windows Update search returned result code $($search.ResultCode)." }; "UpdateScan count=$($search.Updates.Count) result=$($search.ResultCode)"'
     $encodedUpdateSearch = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($updateSearchScript))
     Test-Command 'update.scan' 'WindowsUpdate' $true 'powershell.exe' @('-NoProfile', '-NonInteractive', '-EncodedCommand', $encodedUpdateSearch) '(?m)^UpdateScan count=\d+ result=2$'
+    if ($Depth -eq 'Release') {
+        try {
+            $updateInstall = & $ProbeProvider.UpdateInstall
+            $hasRequiredFields = if ($null -eq $updateInstall) { @('result') } else {
+                @('Outcome', 'SearchResultCode', 'ApplicableCount', 'RebootRequired', 'Evidence') |
+                    Where-Object { -not $updateInstall.PSObject.Properties[$_] }
+            }
+            $valid = $null -ne $updateInstall -and @($hasRequiredFields).Count -eq 0 -and [int]$updateInstall.SearchResultCode -eq 2 -and [int]$updateInstall.ApplicableCount -ge 0
+            if ($valid -and [string]$updateInstall.Outcome -eq 'ZeroApplicable') {
+                $valid = [int]$updateInstall.ApplicableCount -eq 0 -and -not [bool]$updateInstall.RebootRequired
+            } elseif ($valid -and [string]$updateInstall.Outcome -eq 'Installed') {
+                $installFields = @('Title', 'KBArticleIDs', 'DownloadResultCode', 'InstallResultCode', 'UpdateResultCode', 'HResult') |
+                    Where-Object { -not $updateInstall.PSObject.Properties[$_] }
+                $valid = @($installFields).Count -eq 0 -and [int]$updateInstall.ApplicableCount -gt 0 -and
+                    -not [string]::IsNullOrWhiteSpace([string]$updateInstall.Title) -and
+                    [int]$updateInstall.DownloadResultCode -eq 2 -and [int]$updateInstall.InstallResultCode -eq 2 -and
+                    [int]$updateInstall.UpdateResultCode -eq 2 -and [int]$updateInstall.HResult -eq 0
+            } else { $valid = $false }
+            Add-AcceptanceResult 'update.install-one' 'WindowsUpdate' $true $(if ($valid) { 'Pass' } else { 'Fail' }) ([string]$updateInstall.Evidence) $updateInstall
+        } catch { Add-AcceptanceResult 'update.install-one' 'WindowsUpdate' $true 'Fail' $_.Exception.Message }
+    } else {
+        Add-AcceptanceResult 'update.install-one' 'WindowsUpdate' $false 'NotRun' 'Release-depth update installation probe.'
+    }
 
     foreach ($registration in @('Start', 'Explorer', 'Settings', 'WebView2')) {
         Test-Presence "core.$($registration.ToLowerInvariant())" 'CoreWindows' $true 'Registration' @($registration) $true
