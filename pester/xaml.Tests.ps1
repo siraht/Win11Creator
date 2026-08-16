@@ -482,6 +482,8 @@ Describe "XAML and sync wiring" {
             "Win11ISOManualOverrides",
             "Win11ISOOfflineSession",
             "Win11ISOComponentActionOverrides",
+            "Win11ISOCustomActionOverrides",
+            "Win11ISOUpdatingProfileSelection",
             "Win11ISOUpdatingExclusiveChoices",
             "Win11ISOUpdatingAdvancedSelector",
             "AppCategoryChips",

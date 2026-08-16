@@ -57,6 +57,52 @@ Describe 'Win11 Creator component policy presentation' {
         $custom.Summary.DisableCount | Should -Be 0
         $custom.Summary.ProtectedCount | Should -Be @($script:catalog.components | Where-Object defaultAction -eq 'protected').Count
     }
+
+    It 'derives the first Custom state from the selected actionable profile and its overrides' {
+        $transition = Get-WinUtilComponentProfileTransition `
+            -Catalog $script:catalog `
+            -Profiles $script:profiles `
+            -CurrentProfileId 'lean-daw' `
+            -SelectedProfileId 'custom' `
+            -CurrentActionOverrides @{ 'uac' = 'keep'; 'uac-prompt-suppression' = 'disable' }
+        $leanProfile = $script:profiles | Where-Object id -eq 'lean-daw'
+
+        $transition.SelectedProfileId | Should -Be 'custom'
+        $transition.ActionOverrides['windows-search'] | Should -Be ([string]$leanProfile.actions.'windows-search')
+        $transition.ActionOverrides['windows-ai'] | Should -Be ([string]$leanProfile.actions.'windows-ai')
+        $transition.ActionOverrides['uac'] | Should -Be 'keep'
+        $transition.ActionOverrides['uac-prompt-suppression'] | Should -Be 'disable'
+        $custom = New-WinUtilComponentPolicyPresentation -Catalog $script:catalog -Profiles $script:profiles `
+            -SelectedProfileId 'custom' -ActionOverrides $transition.ActionOverrides
+        $custom.Summary.RemoveCount | Should -BeGreaterThan 0
+        $custom.Summary.DisableCount | Should -BeGreaterThan 0
+    }
+
+    It 'restores saved Custom actions after visiting another preset' {
+        $saved = @{ 'windows-search' = 'disable'; 'uac' = 'keep'; 'uac-prompt-suppression' = 'disable' }
+        $leaveCustom = Get-WinUtilComponentProfileTransition `
+            -Catalog $script:catalog -Profiles $script:profiles -CurrentProfileId 'custom' -SelectedProfileId 'default-winutil' `
+            -CurrentActionOverrides $saved
+        $restoreCustom = Get-WinUtilComponentProfileTransition `
+            -Catalog $script:catalog -Profiles $script:profiles -CurrentProfileId 'default-winutil' -SelectedProfileId 'custom' `
+            -CustomActionOverrides $leaveCustom.CustomActionOverrides
+
+        $leaveCustom.ActionOverrides.Count | Should -Be 0
+        $restoreCustom.ActionOverrides['windows-search'] | Should -Be 'disable'
+        $restoreCustom.ActionOverrides['uac-prompt-suppression'] | Should -Be 'disable'
+    }
+
+    It 'plants the negative that Custom cannot derive from an unavailable profile or unknown override' {
+        { Get-WinUtilComponentProfileTransition -Catalog $script:catalog -Profiles $script:profiles `
+            -CurrentProfileId 'placeholder' -SelectedProfileId 'custom' } |
+            Should -Throw "*Cannot derive Custom from unavailable profile 'placeholder'*"
+        { Get-WinUtilComponentProfileTransition -Catalog $script:catalog -Profiles $script:profiles `
+            -CurrentProfileId 'lean-daw' -SelectedProfileId 'custom' -CurrentActionOverrides @{ 'unknown-component' = 'remove' } } |
+            Should -Throw "*unknown component 'unknown-component'*"
+        { Get-WinUtilComponentProfileTransition -Catalog $script:catalog -Profiles $script:profiles `
+            -CurrentProfileId 'default-winutil' -SelectedProfileId 'custom' -CustomActionOverrides @{ 'windows-search' = 'erase' } } |
+            Should -Throw "*invalid action 'erase'*"
+    }
 }
 
 Describe 'Win11 Creator advanced package selector safeguards' {
@@ -236,6 +282,9 @@ Describe 'Win11 Creator policy XAML bindings' {
 
         $functionSource | Should -Match '\$sync\.configs\.componentPolicy\.catalog'
         $functionSource | Should -Match '\$sync\.configs\.componentPolicy\.profiles\.PSObject\.Properties\.Value'
+        $functionSource | Should -Match 'Get-WinUtilComponentProfileTransition'
+        $functionSource | Should -Match 'Win11ISOCustomActionOverrides'
+        $mainSource | Should -Match 'Invoke-WinUtilComponentPolicyCustomization'
         $mainSource | Should -Match 'Set-WinUtilAdvancedPackageOverride'
         $mainSource | Should -Match '\$sync\[''Win11ISOManualOverrides''\]'
         $mainSource | Should -Match 'Resolve-WinUtilComponentPolicyHandoff'

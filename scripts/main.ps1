@@ -137,7 +137,7 @@ $xaml.SelectNodes("//*[@Name]") | ForEach-Object {$sync["$("$($psitem.Name)")"] 
 Initialize-WinUtilComponentPolicyUI
 
 $sync.WPFWin11ISOProfileComboBox.Add_SelectionChanged({
-    if ($sync.WPFWin11ISOProfileComboBox.SelectedValue) {
+    if (-not $sync['Win11ISOUpdatingProfileSelection'] -and $sync.WPFWin11ISOProfileComboBox.SelectedValue) {
         Set-WinUtilComponentPolicyProfile -ProfileId ([string]$sync.WPFWin11ISOProfileComboBox.SelectedValue)
     }
 })
@@ -155,9 +155,7 @@ $exclusiveChoiceSelectionHandler = [System.Windows.Controls.SelectionChangedEven
         -ExistingOverrides $sync['Win11ISOComponentActionOverrides']
     $sync['Win11ISOUpdatingExclusiveChoices'] = $true
     try {
-        Update-WinUtilComponentPolicyUI `
-            -SelectedProfileId ([string]$sync['Win11ISOSelectedProfileId']) `
-            -ActionOverrides $result.ActionOverrides
+        Invoke-WinUtilComponentPolicyCustomization -ActionOverrides $result.ActionOverrides
         $sync.WPFWin11ISOExpertWarning.Text = "Selected risk: $($result.Risk). $($result.Warning)"
         $sync.WPFWin11ISOExpertWarning.Visibility = if ($result.Risk -in @('high', 'expert')) { 'Visible' } else { 'Collapsed' }
     } finally {
@@ -206,7 +204,7 @@ $advancedPackageSelectionHandler = [System.Windows.RoutedEventHandler]{
     if ($result.Override) { $overrideByKey[$key] = $result.Override } else { $overrideByKey.Remove($key) }
     $sync['Win11ISOManualOverrides'] = @($overrideByKey.Values)
 
-    Resolve-WinUtilComponentPolicyHandoff | Out-Null
+    Invoke-WinUtilComponentPolicyCustomization -ActionOverrides $sync['Win11ISOComponentActionOverrides']
 }
 $sync.WPFWin11ISOAdvancedPackageItems.AddHandler(
     [System.Windows.Controls.Primitives.ToggleButton]::CheckedEvent,

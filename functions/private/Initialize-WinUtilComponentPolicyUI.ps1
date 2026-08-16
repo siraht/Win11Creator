@@ -163,6 +163,85 @@ function Set-WinUtilExclusiveComponentChoice {
     }
 }
 
+function Copy-WinUtilComponentActionOverride {
+    param ([System.Collections.IDictionary]$ActionOverrides)
+
+    $copy = @{}
+    if ($null -ne $ActionOverrides) {
+        foreach ($key in @($ActionOverrides.Keys)) {
+            $copy[[string]$key] = [string]$ActionOverrides[$key]
+        }
+    }
+    return $copy
+}
+
+function Get-WinUtilComponentProfileTransition {
+    <#
+    .SYNOPSIS
+        Produces the actionable override state for a profile dropdown transition.
+    #>
+    param (
+        [Parameter(Mandatory)][psobject]$Catalog,
+        [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$Profiles,
+        [Parameter(Mandatory)][string]$CurrentProfileId,
+        [Parameter(Mandatory)][string]$SelectedProfileId,
+        [System.Collections.IDictionary]$CurrentActionOverrides = @{},
+        [System.Collections.IDictionary]$CustomActionOverrides
+    )
+
+    $catalogIds = @($Catalog.components | ForEach-Object { [string]$_.id })
+    $allowedActions = @('keep', 'remove', 'disable', 'manual', 'protected')
+    $knownProfileIds = @($Profiles | ForEach-Object { [string]$_.id })
+    if ($SelectedProfileId -ne 'custom' -and $SelectedProfileId -notin $knownProfileIds) {
+        throw "Component profile '$SelectedProfileId' is not available."
+    }
+
+    $savedCustom = Copy-WinUtilComponentActionOverride -ActionOverrides $CustomActionOverrides
+    if ($CurrentProfileId -eq 'custom') {
+        $savedCustom = Copy-WinUtilComponentActionOverride -ActionOverrides $CurrentActionOverrides
+    }
+    foreach ($key in @($savedCustom.Keys)) {
+        if ([string]$key -notin $catalogIds) { throw "Custom override references unknown component '$key'." }
+        $action = ([string]$savedCustom[$key]).ToLowerInvariant()
+        if ($action -notin $allowedActions) { throw "Custom override for '$key' has invalid action '$action'." }
+        $savedCustom[[string]$key] = $action
+    }
+    if ($SelectedProfileId -ne 'custom') {
+        return [pscustomobject]@{
+            SelectedProfileId = $SelectedProfileId
+            ActionOverrides = @{}
+            CustomActionOverrides = $savedCustom
+        }
+    }
+
+    if ($null -ne $CustomActionOverrides) {
+        $selectedOverrides = Copy-WinUtilComponentActionOverride -ActionOverrides $savedCustom
+    } elseif ($CurrentProfileId -eq 'custom') {
+        $selectedOverrides = Copy-WinUtilComponentActionOverride -ActionOverrides $CurrentActionOverrides
+    } else {
+        $baseProfile = @($Profiles | Where-Object { [string]$_.id -eq $CurrentProfileId }) | Select-Object -First 1
+        if (-not $baseProfile) { throw "Cannot derive Custom from unavailable profile '$CurrentProfileId'." }
+        $selectedOverrides = @{}
+        foreach ($component in @($Catalog.components)) {
+            $componentId = [string]$component.id
+            $profileAction = $baseProfile.actions.PSObject.Properties[$componentId]
+            $selectedOverrides[$componentId] = if ($profileAction) { [string]$profileAction.Value } else { [string]$component.defaultAction }
+        }
+        foreach ($key in @($CurrentActionOverrides.Keys)) {
+            if ([string]$key -notin $catalogIds) { throw "Custom override references unknown component '$key'." }
+            $action = ([string]$CurrentActionOverrides[$key]).ToLowerInvariant()
+            if ($action -notin $allowedActions) { throw "Custom override for '$key' has invalid action '$action'." }
+            $selectedOverrides[[string]$key] = $action
+        }
+    }
+
+    [pscustomobject]@{
+        SelectedProfileId = 'custom'
+        ActionOverrides = $selectedOverrides
+        CustomActionOverrides = Copy-WinUtilComponentActionOverride -ActionOverrides $selectedOverrides
+    }
+}
+
 function New-WinUtilAdvancedPackageSelectorModel {
     <#
     .SYNOPSIS
@@ -379,9 +458,44 @@ function Set-WinUtilComponentPolicyProfile {
     #>
     param ([Parameter(Mandatory)][string]$ProfileId)
 
+    $transition = Get-WinUtilComponentProfileTransition `
+        -Catalog $sync.configs.componentPolicy.catalog `
+        -Profiles @($sync.configs.componentPolicy.profiles.PSObject.Properties.Value) `
+        -CurrentProfileId ([string]$sync['Win11ISOSelectedProfileId']) `
+        -SelectedProfileId $ProfileId `
+        -CurrentActionOverrides $sync['Win11ISOComponentActionOverrides'] `
+        -CustomActionOverrides $sync['Win11ISOCustomActionOverrides']
     $sync['Win11ISOManualOverrides'] = @()
-    $sync['Win11ISOComponentActionOverrides'] = @{}
-    Update-WinUtilComponentPolicyUI -SelectedProfileId $ProfileId
+    $sync['Win11ISOCustomActionOverrides'] = $transition.CustomActionOverrides
+    Update-WinUtilComponentPolicyUI -SelectedProfileId $transition.SelectedProfileId -ActionOverrides $transition.ActionOverrides
+}
+
+function Invoke-WinUtilComponentPolicyCustomization {
+    <#
+    .SYNOPSIS
+        Promotes a manual policy change to Custom and regenerates the live handoff.
+    #>
+    param ([Parameter(Mandatory)][System.Collections.IDictionary]$ActionOverrides)
+
+    $savedCustomOverrides = if ([string]$sync['Win11ISOSelectedProfileId'] -eq 'custom') {
+        $sync['Win11ISOCustomActionOverrides']
+    } else { $null }
+    $transition = Get-WinUtilComponentProfileTransition `
+        -Catalog $sync.configs.componentPolicy.catalog `
+        -Profiles @($sync.configs.componentPolicy.profiles.PSObject.Properties.Value) `
+        -CurrentProfileId ([string]$sync['Win11ISOSelectedProfileId']) `
+        -SelectedProfileId 'custom' `
+        -CurrentActionOverrides $ActionOverrides `
+        -CustomActionOverrides $savedCustomOverrides
+    Update-WinUtilComponentPolicyUI -SelectedProfileId 'custom' -ActionOverrides $transition.ActionOverrides
+
+    $wasUpdatingProfileSelection = $sync['Win11ISOUpdatingProfileSelection'] -eq $true
+    $sync['Win11ISOUpdatingProfileSelection'] = $true
+    try {
+        Invoke-WPFUIThread { $sync.WPFWin11ISOProfileComboBox.SelectedValue = 'custom' }
+    } finally {
+        $sync['Win11ISOUpdatingProfileSelection'] = $wasUpdatingProfileSelection
+    }
 }
 
 function Update-WinUtilComponentPolicyUI {
@@ -398,6 +512,9 @@ function Update-WinUtilComponentPolicyUI {
     $sync.ComponentPolicyPresentation = $model
     $sync['Win11ISOSelectedProfileId'] = $SelectedProfileId
     $sync['Win11ISOComponentActionOverrides'] = $ActionOverrides
+    if ($SelectedProfileId -eq 'custom') {
+        $sync['Win11ISOCustomActionOverrides'] = Copy-WinUtilComponentActionOverride -ActionOverrides $ActionOverrides
+    }
     $sync['Win11ISOResolvedPlan'] = $null
     $sync['Win11ISORegistryActions'] = $null
     $sync['Win11ISOActionBundle'] = $null

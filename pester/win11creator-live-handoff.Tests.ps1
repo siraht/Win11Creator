@@ -9,7 +9,7 @@ Describe 'Win11 Creator live policy handoff' {
 
         function Invoke-WPFUIThread { param([scriptblock]$ScriptBlock) & $ScriptBlock }
         function New-TestControl {
-            [pscustomobject]@{ Text = ''; Foreground = ''; IsEnabled = $false; IsChecked = $false; Visibility = 'Collapsed'; ItemsSource = @() }
+            [pscustomobject]@{ Text = ''; Foreground = ''; IsEnabled = $false; IsChecked = $false; Visibility = 'Collapsed'; ItemsSource = @(); SelectedValue = $null }
         }
 
         $catalog = Get-Content (Join-Path $repoRoot 'policy/component-catalog.json') -Raw | ConvertFrom-Json
@@ -44,6 +44,7 @@ Describe 'Win11 Creator live policy handoff' {
             WPFWin11ISOSummaryProtected = New-TestControl
             WPFWin11ISOSummaryRisk = New-TestControl
             WPFWin11ISOExclusiveChoices = New-TestControl
+            WPFWin11ISOProfileComboBox = New-TestControl
             WPFWin11ISOAppsItems = New-TestControl
             WPFWin11ISOWindowsComponentsItems = New-TestControl
             WPFWin11ISOFeaturesItems = New-TestControl
@@ -57,6 +58,8 @@ Describe 'Win11 Creator live policy handoff' {
         $sync.Win11ISOImageInventory = $script:inventory
         $sync.Win11ISOManualOverrides = @()
         $sync.Win11ISOComponentActionOverrides = @{}
+        $sync.Win11ISOCustomActionOverrides = $null
+        $sync.WPFWin11ISOProfileComboBox.SelectedValue = 'default-winutil'
         $sync.Win11ISOOfflineSession = [pscustomobject]@{
             State = 'Mounted'; InstallImagePath = 'copied-install.wim'; ImageIndex = 6
             OfflineSystemSelect = [pscustomobject]@{ Current = 1 }
@@ -144,6 +147,34 @@ Describe 'Win11 Creator live policy handoff' {
         $sync.Win11ISOActionBundle | Should -Be $result.ActionBundle
     }
 
+    It 'promotes a manual UAC choice to an actionable Custom profile' {
+        $model = New-WinUtilComponentPolicyPresentation `
+            -Catalog $sync.configs.componentPolicy.catalog `
+            -Profiles @($sync.configs.componentPolicy.profiles.PSObject.Properties.Value) `
+            -SelectedProfileId 'default-winutil'
+        $choice = Set-WinUtilExclusiveComponentChoice `
+            -ChoiceGroup ($model.ChoiceGroups | Where-Object Id -eq 'uac-mode') `
+            -SelectedChoiceId 'uac-prompt-suppression'
+
+        Invoke-WinUtilComponentPolicyCustomization -ActionOverrides $choice.ActionOverrides
+
+        $sync.Win11ISOSelectedProfileId | Should -Be 'custom'
+        $sync.WPFWin11ISOProfileComboBox.SelectedValue | Should -Be 'custom'
+        $sync.Win11ISOComponentActionOverrides.'uac-prompt-suppression' | Should -Be 'disable'
+        $sync.Win11ISOActionBundle.RegistryActions | Where-Object {
+            $_.Name -eq 'EnableLUA' -and [int]$_.Value -eq 1
+        } | Should -HaveCount 1
+    }
+
+    It 'plants the negative that invalid Custom state cannot relabel the live profile' {
+        {
+            Invoke-WinUtilComponentPolicyCustomization -ActionOverrides @{ 'windows-search' = 'erase' }
+        } | Should -Throw "*invalid action 'erase'*"
+
+        $sync.Win11ISOSelectedProfileId | Should -Be 'default-winutil'
+        $sync.WPFWin11ISOProfileComboBox.SelectedValue | Should -Be 'default-winutil'
+    }
+
     It 're-resolves profile, summary, groups, selector, and readiness from a mounted analysis' {
         $sync.WPFWin11ISOExpertMode.IsChecked = $true
 
@@ -190,7 +221,10 @@ Describe 'Win11 Creator live policy handoff' {
     }
 
     It 'clears inventory overrides and readiness before an analysis refresh' {
-        Resolve-WinUtilComponentPolicyHandoff | Out-Null
+        Invoke-WinUtilComponentPolicyCustomization -ActionOverrides @{
+            'uac-prompt-suppression' = 'disable'
+            uac = 'keep'
+        }
         $sync.Win11ISOManualOverrides = @([pscustomobject]@{
             Kind = 'AppX'; Identity = 'Microsoft.WindowsFeedbackHub_1.0_neutral_~_8wekyb3d8bbwe'; Action = 'Keep'
         })
@@ -199,6 +233,8 @@ Describe 'Win11 Creator live policy handoff' {
 
         $sync.Win11ISOImageInventory | Should -BeNullOrEmpty
         $sync.Win11ISOManualOverrides | Should -BeNullOrEmpty
+        $sync.Win11ISOSelectedProfileId | Should -Be 'custom'
+        $sync.Win11ISOComponentActionOverrides.'uac-prompt-suppression' | Should -Be 'disable'
         $sync.Win11ISOResolvedPlan | Should -BeNullOrEmpty
         $sync.Win11ISOPolicyHandoff.IsReady | Should -BeFalse
         $sync.WPFWin11ISOModifyButton.IsEnabled | Should -BeFalse
