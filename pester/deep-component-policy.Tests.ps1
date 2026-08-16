@@ -11,9 +11,10 @@ Describe "Deep customization component policy" {
         $script:catalog = Import-WinUtilComponentPolicy -Path (Join-Path $script:policyRoot "component-catalog.json")
         $script:defaultProfile = Import-WinUtilComponentPolicy -Path (Join-Path $script:policyRoot "profiles/default-winutil.json") -Catalog $script:catalog
         $script:leanDawProfile = Import-WinUtilComponentPolicy -Path (Join-Path $script:policyRoot "profiles/lean-daw.json") -Catalog $script:catalog
+        $script:leanDawDefenderRetainedProfile = Import-WinUtilComponentPolicy -Path (Join-Path $script:policyRoot "profiles/lean-daw-defender-retained.json") -Catalog $script:catalog
     }
 
-    It "deserializes the versioned schema, catalog, and both profiles" {
+    It "deserializes the versioned schema, catalog, and shipped profiles" {
         $schema = Get-Content -LiteralPath (Join-Path $script:policyRoot "component-policy.schema.json") -Raw | ConvertFrom-Json
 
         $schema.'$defs'.action.enum | Should -Be @("keep", "remove", "disable", "manual", "protected")
@@ -21,7 +22,7 @@ Describe "Deep customization component policy" {
         $schema.'$defs'.matchType.enum | Should -Be @("exact", "wildcard", "version-insensitive")
         $schema.'$defs'.conflictSeverity.enum | Should -Be @("warning", "likely-breakage", "forbidden-unless-expert")
         $script:catalog.schemaVersion | Should -Be 1
-        @($script:defaultProfile, $script:leanDawProfile).Count | Should -Be 2
+        @($script:defaultProfile, $script:leanDawProfile, $script:leanDawDefenderRetainedProfile).Count | Should -Be 3
     }
 
     It "accepts every supported action and risk value" {
@@ -88,10 +89,18 @@ Describe "Deep customization component policy" {
         }
     }
 
-    It "gives every catalog component an action in both profiles" {
+    It "gives every catalog component an action in every shipped profile" {
         foreach ($componentId in $script:catalog.components.id) {
             $script:defaultProfile.actions.PSObject.Properties.Name | Should -Contain $componentId
             $script:leanDawProfile.actions.PSObject.Properties.Name | Should -Contain $componentId
+            $script:leanDawDefenderRetainedProfile.actions.PSObject.Properties.Name | Should -Contain $componentId
+        }
+    }
+
+    It "changes only Defender from the Lean DAW profile" {
+        foreach ($componentId in $script:catalog.components.id) {
+            $expected = if ($componentId -eq 'defender') { 'keep' } else { [string]$script:leanDawProfile.actions.$componentId }
+            $script:leanDawDefenderRetainedProfile.actions.$componentId | Should -Be $expected
         }
     }
 

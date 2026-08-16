@@ -231,6 +231,20 @@ Describe 'Noninteractive Windows ISO build orchestration' {
         Test-Path -LiteralPath $fixture.OutputIso | Should -BeFalse
     }
 
+    It 'builds the explicit Defender-retained Lean DAW profile in Expert mode' {
+        $fixture = New-NonInteractiveBuildFixture
+
+        $result = Invoke-WinUtilWindowsBuild -SourceIsoPath $fixture.SourceIso -ImageIndex 6 `
+            -Profile lean-daw-defender-retained -ExpertMode -OutputIsoPath $fixture.OutputIso `
+            -WorkDirectory $fixture.Work -OscdimgPath $fixture.Oscdimg -BuildProvider $fixture.Provider
+
+        $result.Profile | Should -Be 'lean-daw-defender-retained'
+        $fixture.Session.State | Should -Be 'Committed'
+        $fixture.State.PrepareArguments.ActionBundle.IsReady | Should -BeTrue
+        @($fixture.State.PrepareArguments.ActionBundle.SecurityOperations) | Should -HaveCount 0
+        Test-Path -LiteralPath $result.EvidenceDirectory -PathType Container | Should -BeTrue
+    }
+
     It 'plants unsupported-media and stale-path negatives before durable output' {
         $unsupported = New-NonInteractiveBuildFixture -Build 26100
         { Invoke-WinUtilWindowsBuild -SourceIsoPath $unsupported.SourceIso -ImageIndex 6 -Profile default-winutil `

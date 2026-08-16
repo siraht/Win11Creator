@@ -14,16 +14,16 @@ Describe 'Win11 Creator component policy presentation' {
         $script:leanModel = New-WinUtilComponentPolicyPresentation -Catalog $script:catalog -Profiles $script:profiles -SelectedProfileId 'lean-daw'
     }
 
-    It 'shows only the two implemented profiles and Custom in product order' {
-        @($script:leanModel.Profiles.Name) | Should -Be @('Default WinUtil', 'Lean DAW', 'Custom')
-        @($script:leanModel.Profiles.Id) | Should -Be @('default-winutil', 'lean-daw', 'custom')
+    It 'shows only implemented profiles and Custom in product order' {
+        @($script:leanModel.Profiles.Name) | Should -Be @('Default WinUtil', 'Lean DAW', 'Lean DAW (Defender retained)', 'Custom')
+        @($script:leanModel.Profiles.Id) | Should -Be @('default-winutil', 'lean-daw', 'lean-daw-defender-retained', 'custom')
     }
 
     It 'includes newly implemented profile data without adding a UI placeholder' {
         $futureProfile = [pscustomobject]@{ id = 'developer'; name = 'Developer'; actions = [pscustomobject]@{} }
         $model = New-WinUtilComponentPolicyPresentation -Catalog $script:catalog -Profiles (@($script:profiles) + @($futureProfile))
 
-        @($model.Profiles.Id) | Should -Be @('default-winutil', 'lean-daw', 'developer', 'custom')
+        @($model.Profiles.Id) | Should -Be @('default-winutil', 'lean-daw', 'developer', 'lean-daw-defender-retained', 'custom')
     }
 
     It 'summarizes the selected profile from policy actions and risks' {
