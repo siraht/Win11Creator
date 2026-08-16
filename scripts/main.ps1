@@ -141,6 +141,8 @@ $sync.WPFWin11ISOProfileComboBox.Add_SelectionChanged({
         Set-WinUtilComponentPolicyProfile -ProfileId ([string]$sync.WPFWin11ISOProfileComboBox.SelectedValue)
     }
 })
+$sync.WPFWin11ISOPresetImportButton.Add_Click({ Invoke-WinUtilComponentPresetImportDialog })
+$sync.WPFWin11ISOPresetExportButton.Add_Click({ Invoke-WinUtilComponentPresetExportDialog })
 
 $exclusiveChoiceSelectionHandler = [System.Windows.Controls.SelectionChangedEventHandler]{
     param($uiSender, $uiEventArgs)

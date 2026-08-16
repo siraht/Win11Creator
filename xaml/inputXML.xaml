@@ -1834,6 +1834,12 @@
                                                    Foreground="{DynamicResource MainForegroundColor}"/>
                                         <ComboBox Name="WPFWin11ISOProfileComboBox" Margin="0,6,0,10" MinWidth="220"
                                                   HorizontalAlignment="Left"/>
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                            <Button Name="WPFWin11ISOPresetImportButton" Content="Import Preset..." Margin="0,0,8,0"
+                                                    Width="Auto" Padding="10,3"/>
+                                            <Button Name="WPFWin11ISOPresetExportButton" Content="Export Preset..."
+                                                    Width="Auto" Padding="10,3"/>
+                                        </StackPanel>
                                         <TextBlock Name="WPFWin11ISOPolicyHandoffStatus" Margin="0,0,0,10" TextWrapping="Wrap"
                                                    Foreground="OrangeRed"
                                                    Text="Preview only: inventory, resolved plan, and registry actions have not been staged."/>
