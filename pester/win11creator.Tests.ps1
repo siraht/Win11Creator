@@ -249,6 +249,35 @@ Describe "Win11 Creator setup media" {
         }
     }
 
+    It "preserves evaluation media channel metadata while removing a stale product key" {
+        $contentRoot = Join-Path ([IO.Path]::GetTempPath()) "WinUtilIsoEvaluationConfig_$([guid]::NewGuid())"
+        $sourcesDir = Join-Path $contentRoot "sources"
+        $logs = [System.Collections.Generic.List[string]]::new()
+        $logger = { param($message) $logs.Add([string]$message) }
+        $nativeEvaluationConfig = "[EditionID]`r`nEnterpriseEval`r`n[Channel]`r`nEval"
+
+        try {
+            New-Item -Path $sourcesDir -ItemType Directory -Force | Out-Null
+            Set-Content -Path (Join-Path $sourcesDir "PID.txt") -Value "stale-key" -Encoding UTF8
+            Set-Content -Path (Join-Path $sourcesDir "ei.cfg") -Value $nativeEvaluationConfig -Encoding ASCII
+
+            . $script:isoScriptPath
+            Invoke-WinUtilISOScript -ISOContentsDir $contentRoot -AutoUnattendXml (Get-Content -Path $script:autoUnattendPath -Raw) -InstallEditionId "EnterpriseEval" -InstallImageIndex 1 -Log $logger
+
+            Test-Path (Join-Path $sourcesDir "PID.txt") | Should -BeFalse
+            (Get-Content -Path (Join-Path $sourcesDir "ei.cfg") -Raw).Trim() | Should -Be $nativeEvaluationConfig
+            ($logs -join "|") | Should -Match "Preserved source evaluation configuration.*skipped Retail sources\\ei\.cfg synthesis"
+
+            [xml]$answerFile = Get-Content -Path (Join-Path $contentRoot "autounattend.xml") -Raw
+            $nsMgr = New-Object System.Xml.XmlNamespaceManager($answerFile.NameTable)
+            $nsMgr.AddNamespace("u", "urn:schemas-microsoft-com:unattend")
+            $answerFile.SelectSingleNode('/u:unattend/u:settings[@pass="windowsPE"]/u:component[@name="Microsoft-Windows-Setup"]/u:ImageInstall/u:OSImage/u:InstallFrom/u:MetaData[u:Key="/IMAGE/INDEX"]/u:Value', $nsMgr).InnerText | Should -Be '1'
+            $answerFile.SelectNodes('//u:ProductKey', $nsMgr).Count | Should -Be 0
+        } finally {
+            Remove-Item -Path $contentRoot -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
     It "preserves the default setup template without blanket post-install mutations" {
         $contentRoot = Join-Path ([IO.Path]::GetTempPath()) "WinUtilIsoAnswerFile_$([guid]::NewGuid())"
         $template = Get-Content -Path $script:autoUnattendPath -Raw

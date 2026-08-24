@@ -265,6 +265,11 @@ function Invoke-WinUtilISOScript {
         }
 
         $eiCfgPath = Join-Path $sourcesDir "ei.cfg"
+        if ($EditionId.EndsWith('Eval', [System.StringComparison]::OrdinalIgnoreCase)) {
+            & $Logger "Preserved source evaluation configuration for EditionID '$EditionId'; skipped Retail sources\ei.cfg synthesis."
+            return
+        }
+
         $eiCfg = @"
 [EditionID]
 $EditionId
