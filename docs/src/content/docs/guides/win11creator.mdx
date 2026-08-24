@@ -21,6 +21,20 @@ You need an **official Windows 11 ISO** from [Microsoft's website](https://www.m
 This workflow is intended for fresh Windows installs, not in-place upgrades of an existing installation.
 :::
 
+### One-window ISO builder
+
+In this fork's repository checkout, double-click `Build-LeanDAW.cmd` for the simplest ISO-only path. Accept the administrator prompt, then use the same window to:
+
+1. Choose and analyze the official Windows 11 ISO.
+2. Select an edition and an available component profile.
+3. Choose the output ISO and, optionally, a driver folder.
+4. Follow the named build stage, progress bar, and live durable log until completion.
+5. Open the finished ISO location or its verification-evidence folder.
+
+The Defender-retained Lean DAW profile is available. The original Defender-removal profile remains visible with its blocking explanation, but cannot be built because the supported Windows 11 25H2 servicing surface does not expose a removable Defender AV-core target. The launcher never overwrites an existing output and removes its unique temporary work directory only after the ISO and evidence are published successfully. Keep at least 50 GB free on the selected output drive for this deep-servicing path.
+
+The steps below describe the full WinUtil Win11 Creator tab, including direct USB output.
+
 ---
 
 ### Step 1 — Select Your Official Windows 11 ISO
