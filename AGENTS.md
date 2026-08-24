@@ -180,3 +180,4 @@ When the user corrects an agent approach, add or tighten one concrete rule here 
 - For Win11 Creator driver injection, keep offline WIM servicing to one mount, one `/Add-Driver`, and one commit; do not export editions or run unrelated WIM cleanup, and reject damaged metadata before ISO export.
 - For Script Analyzer cleanup, fix actionable source warnings first and do not globally suppress accepted convention warnings such as plural names, `ShouldProcess` on UI helpers, `$global:sync`, or compile-time cross-file false positives.
 - For DNS DHCP reset, keep the cmdlet reset and explicitly set IPv4 and IPv6 DNS source to DHCP.
+- Keep the human Lean DAW ISO path double-clickable: the launcher owns elevation, file/edition selection, profile choice, packaging-tool discovery, and temporary paths. Reserve the parameter-heavy builder command for automation and tests.
