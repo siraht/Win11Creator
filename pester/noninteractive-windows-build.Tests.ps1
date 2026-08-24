@@ -245,6 +245,20 @@ Describe 'Noninteractive Windows ISO build orchestration' {
         Test-Path -LiteralPath $result.EvidenceDirectory -PathType Container | Should -BeTrue
     }
 
+    It 'removes only successful invocation-owned work when the interactive launcher requests cleanup' {
+        $fixture = New-NonInteractiveBuildFixture
+
+        $result = Invoke-WinUtilWindowsBuild -SourceIsoPath $fixture.SourceIso -ImageIndex 6 -Profile default-winutil `
+            -OutputIsoPath $fixture.OutputIso -WorkDirectory $fixture.Work -OscdimgPath $fixture.Oscdimg `
+            -RemoveWorkDirectoryOnSuccess -BuildProvider $fixture.Provider
+
+        Test-Path -LiteralPath $result.OutputIsoPath -PathType Leaf | Should -BeTrue
+        Test-Path -LiteralPath $result.EvidenceDirectory -PathType Container | Should -BeTrue
+        Test-Path -LiteralPath $fixture.Work | Should -BeFalse
+        $result.WorkDirectoryRetained | Should -BeFalse
+        $result.CleanupWarning | Should -BeNullOrEmpty
+    }
+
     It 'plants unsupported-media and stale-path negatives before durable output' {
         $unsupported = New-NonInteractiveBuildFixture -Build 26100
         { Invoke-WinUtilWindowsBuild -SourceIsoPath $unsupported.SourceIso -ImageIndex 6 -Profile default-winutil `

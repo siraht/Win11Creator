@@ -7,7 +7,8 @@ param (
     [string]$WorkDirectory,
     [string]$OscdimgPath,
     [string]$DriverDirectory = '',
-    [switch]$ExpertMode
+    [switch]$ExpertMode,
+    [switch]$RemoveWorkDirectoryOnSuccess
 )
 
 $script:WinUtilRepositoryRoot = Split-Path -Parent $PSScriptRoot
@@ -136,6 +137,7 @@ function Invoke-WinUtilWindowsBuild {
         [Parameter(Mandatory)][string]$OscdimgPath,
         [string]$DriverDirectory = '',
         [switch]$ExpertMode,
+        [switch]$RemoveWorkDirectoryOnSuccess,
         [hashtable]$BuildProvider
     )
 
@@ -187,10 +189,13 @@ function Invoke-WinUtilWindowsBuild {
         if ($selectedMetadata.Count -ne 1) { throw "Image index $ImageIndex is not one unambiguous supported edition." }
         $imageName = [string]$selectedMetadata[0].ImageName
         $editionId = Get-WinUtilWindowsEditionId -ImageName $imageName
+        & $log "Validated source edition '$imageName' at index $ImageIndex."
 
         $isoContents = Join-Path $WorkDirectory 'iso_contents'
         New-Item -Path $isoContents -ItemType Directory -ErrorAction Stop | Out-Null
+        & $log 'Copying Windows setup media into the isolated work directory.'
         & $BuildProvider.CopyMedia $mediaRoot $isoContents
+        & $log 'Copied Windows setup media.'
         $copiedImage = Get-WinUtilInstallImage -MediaRoot $isoContents
         $localWim = [string]$copiedImage.Path
         $serviceIndex = $ImageIndex
@@ -212,6 +217,8 @@ function Invoke-WinUtilWindowsBuild {
         if (-not $resolution.Safety.IsAllowed -or -not $resolution.ActionBundle.IsReady -or -not $resolution.ActionBundle.IsAllowed) {
             throw "Resolved '$ComponentProfile' plan is not ready or allowed."
         }
+        $mutationCount = @($resolution.ResolvedPlan.Decisions | Where-Object Action -in @('Remove', 'Disable')).Count
+        & $log "Resolved '$ComponentProfile' with $mutationCount offline mutations ready to apply."
 
         $manifestDirectory = Join-Path $WorkDirectory 'manifests'
         $prepareArguments = @{
@@ -228,6 +235,7 @@ function Invoke-WinUtilWindowsBuild {
         $mounted = $false
         $bootData = "2#p0,e,b`"$isoContents\boot\etfsboot.com`"#pEF,e,b`"$isoContents\efi\microsoft\boot\efisys.bin`""
         $oscdimgArguments = @('-m', '-o', '-u2', '-udfver102', "-bootdata:$bootData", '-lCTOS_MODIFIED', $isoContents, $OutputIsoPath)
+        & $log 'Creating the bootable ISO with oscdimg.'
         $isoResult = & $BuildProvider.CreateIso $OscdimgPath $oscdimgArguments
         if ($null -eq $isoResult -or $null -eq $isoResult.ExitCode) { throw 'oscdimg did not return an exit code.' }
         $isoOutput = @($isoResult.Output | ForEach-Object { [string]$_ })
@@ -239,13 +247,26 @@ function Invoke-WinUtilWindowsBuild {
         if (-not (Test-Path -LiteralPath $OutputIsoPath -PathType Leaf) -or (Get-Item -LiteralPath $OutputIsoPath).Length -eq 0) {
             throw 'oscdimg reported success but the output ISO is missing or empty.'
         }
+        & $log 'ISO packaging completed; hashing output and publishing build evidence.'
         $publication = & $BuildProvider.PublishArtifact $OutputIsoPath $manifestDirectory $logPath
         if (-not $publication -or -not (Test-Path -LiteralPath $publication.EvidenceDirectory -PathType Container)) {
             throw 'Build artifact publication did not return durable evidence.'
         }
+        & $log 'Build artifact and evidence publication completed successfully.'
+        $cleanupWarning = ''
+        if ($RemoveWorkDirectoryOnSuccess -and (Test-Path -LiteralPath $WorkDirectory -PathType Container)) {
+            try {
+                Remove-Item -LiteralPath $WorkDirectory -Recurse -Force -ErrorAction Stop
+            } catch {
+                $cleanupWarning = "The ISO succeeded, but temporary work could not be removed: $_"
+                Write-Warning $cleanupWarning
+            }
+        }
         return [pscustomobject][ordered]@{
             Profile = $ComponentProfile; ImageIndex = $ImageIndex; ImageName = $imageName; OutputIsoPath = [IO.Path]::GetFullPath($OutputIsoPath)
             WorkDirectory = [IO.Path]::GetFullPath($WorkDirectory); EvidenceDirectory = [string]$publication.EvidenceDirectory
+            WorkDirectoryRetained = Test-Path -LiteralPath $WorkDirectory -PathType Container
+            CleanupWarning = $cleanupWarning
         }
     } catch {
         if ($session -and [string]$session.State -eq 'Mounted') {
