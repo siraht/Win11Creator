@@ -220,39 +220,47 @@ function Get-WinUtilBuildForm {
     $header.Controls.Add($subtitle)
 
     $taskTabs = [System.Windows.Forms.TabControl]::new()
+    $taskTabs.Name = 'IsoTaskTabs'
     $taskTabs.Location = [Drawing.Point]::new(18, 92)
     $taskTabs.Size = [Drawing.Size]::new(986, 285)
     $taskTabs.Anchor = 'Top, Left, Right'
     $taskTabs.Font = [Drawing.Font]::new('Segoe UI Semibold', 10)
     $buildTab = [System.Windows.Forms.TabPage]::new('Build customized ISO')
+    $buildTab.Name = 'BuildIsoTab'
     $repairTab = [System.Windows.Forms.TabPage]::new('Repair existing ISO')
+    $repairTab.Name = 'RepairIsoTab'
     $taskTabs.TabPages.AddRange(@($buildTab, $repairTab))
     $form.Controls.Add($taskTabs)
 
-    $configuration = [System.Windows.Forms.GroupBox]::new()
-    $configuration.Text = 'Build configuration'
+    $configuration = [System.Windows.Forms.TableLayoutPanel]::new()
+    $configuration.Name = 'IsoConfigurationPanel'
     $configuration.Font = [Drawing.Font]::new('Segoe UI', 9)
-    $configuration.Location = [Drawing.Point]::new(4, 5)
-    $configuration.Size = [Drawing.Size]::new(970, 250)
-    $configuration.Anchor = 'Top, Bottom, Left, Right'
+    $configuration.Dock = 'Fill'
+    $configuration.Padding = [System.Windows.Forms.Padding]::new(10, 8, 10, 8)
+    $configuration.ColumnCount = 3
+    $configuration.RowCount = 7
+    [void]$configuration.ColumnStyles.Add([System.Windows.Forms.ColumnStyle]::new([System.Windows.Forms.SizeType]::Absolute, 118))
+    [void]$configuration.ColumnStyles.Add([System.Windows.Forms.ColumnStyle]::new([System.Windows.Forms.SizeType]::Percent, 100))
+    [void]$configuration.ColumnStyles.Add([System.Windows.Forms.ColumnStyle]::new([System.Windows.Forms.SizeType]::Absolute, 126))
+    foreach ($height in @(31, 31, 31, 31, 31, 38, 40)) {
+        [void]$configuration.RowStyles.Add([System.Windows.Forms.RowStyle]::new([System.Windows.Forms.SizeType]::Absolute, $height))
+    }
     $buildTab.Controls.Add($configuration)
 
     function Add-ConfigurationRow {
-        param ([string]$Label, [int]$Y, $Control, $Button)
+        param ([string]$Label, [int]$Row, $Control, $Button)
         $rowLabel = [System.Windows.Forms.Label]::new()
         $rowLabel.Text = $Label
-        $rowLabel.Location = [Drawing.Point]::new(16, $Y + 5)
-        $rowLabel.Size = [Drawing.Size]::new(110, 24)
-        $configuration.Controls.Add($rowLabel)
-        $Control.Location = [Drawing.Point]::new(128, $Y)
-        $Control.Size = [Drawing.Size]::new(708, 27)
-        $Control.Anchor = 'Top, Left, Right'
-        $configuration.Controls.Add($Control)
+        $rowLabel.Dock = 'Fill'
+        $rowLabel.TextAlign = 'MiddleLeft'
+        $configuration.Controls.Add($rowLabel, 0, $Row)
+        $Control.Dock = 'Fill'
+        $Control.Margin = [System.Windows.Forms.Padding]::new(3, 2, 8, 2)
+        $configuration.Controls.Add($Control, 1, $Row)
         if ($Button) {
-            $Button.Location = [Drawing.Point]::new(850, $Y - 1)
-            $Button.Size = [Drawing.Size]::new(116, 29)
-            $Button.Anchor = 'Top, Right'
-            $configuration.Controls.Add($Button)
+            $Button.Dock = 'Fill'
+            $Button.Margin = [System.Windows.Forms.Padding]::new(3, 1, 3, 2)
+            $configuration.Controls.Add($Button, 2, $Row)
         }
         return $rowLabel
     }
@@ -261,38 +269,55 @@ function Get-WinUtilBuildForm {
     $sourceBox.ReadOnly = $true
     $sourceButton = [System.Windows.Forms.Button]::new()
     $sourceButton.Text = 'Choose ISO...'
-    $null = Add-ConfigurationRow -Label 'Source ISO' -Y 28 -Control $sourceBox -Button $sourceButton
+    $sourceButton.Name = 'SourceIsoButton'
+    $null = Add-ConfigurationRow -Label 'Source ISO' -Row 0 -Control $sourceBox -Button $sourceButton
 
     $editionBox = [System.Windows.Forms.ComboBox]::new()
     $editionBox.DropDownStyle = 'DropDownList'
     $analyzeButton = [System.Windows.Forms.Button]::new()
+    $analyzeButton.Name = 'AnalyzeIsoButton'
     $analyzeButton.Text = 'Analyze ISO'
     $analyzeButton.Enabled = $false
-    $editionLabel = Add-ConfigurationRow -Label 'Windows edition' -Y 66 -Control $editionBox -Button $analyzeButton
+    $editionLabel = Add-ConfigurationRow -Label 'Windows edition' -Row 1 -Control $editionBox -Button $analyzeButton
 
     $profileBox = [System.Windows.Forms.ComboBox]::new()
     $profileBox.DropDownStyle = 'DropDownList'
     $profileBox.DisplayMember = 'Name'
-    $profileLabel = Add-ConfigurationRow -Label 'Profile' -Y 104 -Control $profileBox -Button $null
+    $profileLabel = Add-ConfigurationRow -Label 'Profile' -Row 2 -Control $profileBox -Button $null
 
     $outputBox = [System.Windows.Forms.TextBox]::new()
     $outputBox.ReadOnly = $true
     $outputButton = [System.Windows.Forms.Button]::new()
+    $outputButton.Name = 'OutputIsoButton'
     $outputButton.Text = 'Choose output...'
-    $null = Add-ConfigurationRow -Label 'Output ISO' -Y 142 -Control $outputBox -Button $outputButton
+    $null = Add-ConfigurationRow -Label 'Output ISO' -Row 3 -Control $outputBox -Button $outputButton
 
     $driversBox = [System.Windows.Forms.TextBox]::new()
     $driversBox.ReadOnly = $true
     $driversButton = [System.Windows.Forms.Button]::new()
+    $driversButton.Name = 'DriverFolderButton'
     $driversButton.Text = 'Optional...'
-    $driversLabel = Add-ConfigurationRow -Label 'Driver folder' -Y 180 -Control $driversBox -Button $driversButton
+    $driversLabel = Add-ConfigurationRow -Label 'Driver folder' -Row 4 -Control $driversBox -Button $driversButton
 
     $profileSummary = [System.Windows.Forms.Label]::new()
-    $profileSummary.Location = [Drawing.Point]::new(128, 216)
-    $profileSummary.Size = [Drawing.Size]::new(838, 36)
-    $profileSummary.Anchor = 'Top, Left, Right'
+    $profileSummary.Dock = 'Fill'
+    $profileSummary.TextAlign = 'MiddleLeft'
     $profileSummary.ForeColor = [Drawing.Color]::FromArgb(61, 70, 89)
-    $configuration.Controls.Add($profileSummary)
+    $configuration.Controls.Add($profileSummary, 1, 5)
+    $configuration.SetColumnSpan($profileSummary, 2)
+
+    $buildButton = [System.Windows.Forms.Button]::new()
+    $buildButton.Name = 'PrimaryIsoActionButton'
+    $buildButton.Text = 'Build ISO'
+    $buildButton.Font = [Drawing.Font]::new('Segoe UI Semibold', 10)
+    $buildButton.BackColor = [Drawing.Color]::FromArgb(40, 112, 224)
+    $buildButton.ForeColor = [Drawing.Color]::White
+    $buildButton.FlatStyle = 'Flat'
+    $buildButton.Dock = 'Left'
+    $buildButton.Width = 180
+    $buildButton.Margin = [System.Windows.Forms.Padding]::new(3, 2, 3, 0)
+    $configuration.Controls.Add($buildButton, 1, 6)
+    $configuration.SetColumnSpan($buildButton, 2)
 
     $progressPanel = [System.Windows.Forms.Panel]::new()
     $progressPanel.Location = [Drawing.Point]::new(18, 390)
@@ -340,21 +365,10 @@ function Get-WinUtilBuildForm {
     $logBox.Text = "Waiting for configuration.`r`n"
     $form.Controls.Add($logBox)
 
-    $buildButton = [System.Windows.Forms.Button]::new()
-    $buildButton.Text = 'Build ISO'
-    $buildButton.Font = [Drawing.Font]::new('Segoe UI Semibold', 10)
-    $buildButton.BackColor = [Drawing.Color]::FromArgb(40, 112, 224)
-    $buildButton.ForeColor = [Drawing.Color]::White
-    $buildButton.FlatStyle = 'Flat'
-    $buildButton.Location = [Drawing.Point]::new(18, 766)
-    $buildButton.Size = [Drawing.Size]::new(150, 38)
-    $buildButton.Anchor = 'Bottom, Left'
-    $form.Controls.Add($buildButton)
-
     $openIsoButton = [System.Windows.Forms.Button]::new()
     $openIsoButton.Text = 'Open ISO location'
     $openIsoButton.Enabled = $false
-    $openIsoButton.Location = [Drawing.Point]::new(180, 766)
+    $openIsoButton.Location = [Drawing.Point]::new(18, 766)
     $openIsoButton.Size = [Drawing.Size]::new(150, 38)
     $openIsoButton.Anchor = 'Bottom, Left'
     $form.Controls.Add($openIsoButton)
@@ -362,7 +376,7 @@ function Get-WinUtilBuildForm {
     $openEvidenceButton = [System.Windows.Forms.Button]::new()
     $openEvidenceButton.Text = 'Open evidence'
     $openEvidenceButton.Enabled = $false
-    $openEvidenceButton.Location = [Drawing.Point]::new(342, 766)
+    $openEvidenceButton.Location = [Drawing.Point]::new(180, 766)
     $openEvidenceButton.Size = [Drawing.Size]::new(150, 38)
     $openEvidenceButton.Anchor = 'Bottom, Left'
     $form.Controls.Add($openEvidenceButton)
@@ -761,6 +775,52 @@ function Get-WinUtilBuildForm {
     return $form
 }
 
+function Assert-WinUtilBuildFormLayout {
+    param ([Parameter(Mandatory)]$Form)
+
+    $Form.CreateControl()
+    $tabs = @($Form.Controls.Find('IsoTaskTabs', $true))
+    if ($tabs.Count -ne 1 -or $tabs[0].TabPages.Count -ne 2) {
+        throw 'The ISO workspace must expose exactly one Build/Repair tab control with two tabs.'
+    }
+    $taskTabs = $tabs[0]
+    $taskTabs.CreateControl()
+    $requiredActions = @('SourceIsoButton', 'AnalyzeIsoButton', 'OutputIsoButton', 'PrimaryIsoActionButton')
+    foreach ($tabIndex in 0, 1) {
+        $taskTabs.SelectedIndex = $tabIndex
+        $Form.PerformLayout()
+        $taskTabs.PerformLayout()
+        $configurationMatches = @($Form.Controls.Find('IsoConfigurationPanel', $true))
+        if ($configurationMatches.Count -ne 1 -or $configurationMatches[0].Parent -ne $taskTabs.SelectedTab) {
+            throw "The shared ISO configuration panel is not attached to tab index $tabIndex."
+        }
+        $configuration = $configurationMatches[0]
+        $configuration.CreateControl()
+        $configuration.PerformLayout()
+        foreach ($actionName in $requiredActions) {
+            $actionMatches = @($configuration.Controls.Find($actionName, $true))
+            if ($actionMatches.Count -ne 1) { throw "Required ISO action '$actionName' is missing from tab index $tabIndex." }
+            $action = $actionMatches[0]
+            if ($action.Width -lt 1 -or $action.Height -lt 1 -or $action.Left -lt 0 -or $action.Top -lt 0 -or
+                $action.Right -gt $configuration.ClientSize.Width -or $action.Bottom -gt $configuration.ClientSize.Height) {
+                throw "Required ISO action '$actionName' is outside the visible configuration area on tab index $tabIndex."
+            }
+        }
+        $primaryAction = @($configuration.Controls.Find('PrimaryIsoActionButton', $true))[0]
+        $expectedPrimaryText = if ($tabIndex -eq 0) { 'Build ISO' } else { 'Repair & Repackage' }
+        if ($primaryAction.Text -ne $expectedPrimaryText) {
+            throw "Tab index $tabIndex has primary action '$($primaryAction.Text)' instead of '$expectedPrimaryText'."
+        }
+        if ($tabIndex -eq 0) {
+            $driverActions = @($configuration.Controls.Find('DriverFolderButton', $true))
+            if ($driverActions.Count -ne 1 -or $driverActions[0].Width -lt 1 -or $driverActions[0].Height -lt 1) {
+                throw 'The Build tab is missing its driver-folder action.'
+            }
+        }
+    }
+    $taskTabs.SelectedIndex = 0
+}
+
 function Invoke-WinUtilLeanDawLauncher {
     if ($env:OS -ne 'Windows_NT') { throw 'Build-LeanDAW.cmd must be run on Windows.' }
     Add-Type -AssemblyName System.Windows.Forms
@@ -769,6 +829,7 @@ function Invoke-WinUtilLeanDawLauncher {
     if (-not (Request-WinUtilAdministrator)) { return }
 
     $form = Get-WinUtilBuildForm
+    Assert-WinUtilBuildFormLayout -Form $form
     try { [void]$form.ShowDialog() } finally { $form.Dispose() }
 }
 

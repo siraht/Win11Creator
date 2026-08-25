@@ -21,6 +21,12 @@ Describe 'Win11 Creator human launcher' {
         $script:powershellLauncher | Should -Match ([regex]::Escape('[System.Windows.Forms.OpenFileDialog]'))
         $script:powershellLauncher | Should -Match ([regex]::Escape('[System.Windows.Forms.SaveFileDialog]'))
         $script:powershellLauncher | Should -Match ([regex]::Escape('[System.Windows.Forms.FolderBrowserDialog]'))
+        $script:powershellLauncher | Should -Match ([regex]::Escape('[System.Windows.Forms.TableLayoutPanel]'))
+        $script:powershellLauncher | Should -Not -Match '(?m)^\s*\$configuration\.(?:ColumnStyles|RowStyles)\.Add\('
+        foreach ($actionName in 'SourceIsoButton', 'AnalyzeIsoButton', 'OutputIsoButton', 'DriverFolderButton', 'PrimaryIsoActionButton') {
+            $script:powershellLauncher | Should -Match ([regex]::Escape("Name = '$actionName'"))
+        }
+        $script:powershellLauncher | Should -Match ([regex]::Escape('Assert-WinUtilBuildFormLayout -Form $form'))
     }
 
     It 'integrates repair as a task in the same launcher without another command file' {
