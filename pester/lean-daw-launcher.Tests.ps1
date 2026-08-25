@@ -23,6 +23,15 @@ Describe 'Win11 Creator human launcher' {
         $script:powershellLauncher | Should -Match ([regex]::Escape('[System.Windows.Forms.FolderBrowserDialog]'))
     }
 
+    It 'integrates repair as a task in the same launcher without another command file' {
+        $rootCommandFiles = @(Get-ChildItem -LiteralPath $script:repoRoot -Filter '*.cmd' -File)
+
+        $script:powershellLauncher | Should -Match ([regex]::Escape("'Build customized ISO', 'Repair existing ISO'"))
+        $script:powershellLauncher | Should -Match ([regex]::Escape('Get-WinUtilIsoRepairDefinition'))
+        $script:powershellLauncher | Should -Match ([regex]::Escape("tools\Invoke-WinUtilIsoRepair.ps1"))
+        @($rootCommandFiles.Name | Where-Object { $_ -match 'Repair' }) | Should -HaveCount 0
+    }
+
     It 'offers only buildable profiles while explaining the unsupported Defender-removal profile' {
         $profiles = @(Get-WinUtilLauncherProfile)
 
@@ -64,7 +73,7 @@ Describe 'Win11 Creator human launcher' {
     }
 
     It 'passes selected configuration to the builder and cleans only successful temporary work' {
-        $script:powershellLauncher | Should -Match ([regex]::Escape("AddParameter('ComponentProfile', [string]`$profileSelection.Id)"))
+        $script:powershellLauncher | Should -Match ([regex]::Escape("AddParameter('ComponentProfile', [string]`$selectedOption.Id)"))
         $script:powershellLauncher | Should -Match ([regex]::Escape("AddParameter('ImageIndex', [int]`$edition.ImageIndex)"))
         $script:powershellLauncher | Should -Match ([regex]::Escape("AddParameter('DriverDirectory', `$driversBox.Text)"))
         $script:powershellLauncher | Should -Match ([regex]::Escape("AddParameter('RemoveWorkDirectoryOnSuccess', `$true)"))

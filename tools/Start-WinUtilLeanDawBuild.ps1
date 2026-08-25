@@ -158,19 +158,25 @@ function Get-WinUtilBuildProgress {
 
     if ($IsComplete) { return [pscustomobject]@{ Percent = 100; Stage = 'Complete'; Detail = 'ISO and evidence are ready.' } }
     $stages = @(
+        @{ Pattern = 'Repaired ISO creation completed'; Percent = 99; Stage = 'Finalizing'; Detail = 'Cleaning temporary repair files.' }
         @{ Pattern = 'Build artifact and evidence publication completed'; Percent = 99; Stage = 'Finalizing'; Detail = 'Cleaning temporary build files.' }
         @{ Pattern = 'hashing output and publishing build evidence'; Percent = 95; Stage = 'Verifying'; Detail = 'Hashing the ISO and publishing evidence.' }
         @{ Pattern = 'Creating the bootable ISO'; Percent = 88; Stage = 'Packaging'; Detail = 'Creating the bootable ISO.' }
+        @{ Pattern = 'Creating the repaired dual BIOS/UEFI bootable ISO'; Percent = 80; Stage = 'Packaging'; Detail = 'Repackaging the repaired bootable ISO.' }
         @{ Pattern = 'Committing the offline servicing transaction'; Percent = 78; Stage = 'Committing'; Detail = 'Saving the serviced Windows image.' }
         @{ Pattern = 'component-store-scan-health completed'; Percent = 73; Stage = 'Health checks'; Detail = 'Deep component-store scan passed.' }
         @{ Pattern = 'component-store-check-health completed'; Percent = 69; Stage = 'Health checks'; Detail = 'Component-store health check passed.' }
         @{ Pattern = 'component-cleanup completed'; Percent = 63; Stage = 'Servicing'; Detail = 'Component cleanup completed.' }
         @{ Pattern = 'Written autounattend.xml'; Percent = 52; Stage = 'Servicing'; Detail = 'Applying offline policy and setup actions.' }
         @{ Pattern = 'Resolved .* offline mutations ready'; Percent = 42; Stage = 'Planning'; Detail = 'Resolved profile and safety policy.' }
+        @{ Pattern = 'Applied and verified repair'; Percent = 65; Stage = 'Repairing'; Detail = 'The selected ISO repair was applied and verified.' }
+        @{ Pattern = 'Copied source media and released'; Percent = 40; Stage = 'Inspecting'; Detail = 'Source media copied and ready for repair.' }
         @{ Pattern = 'Mounting copied install.wim'; Percent = 32; Stage = 'Analyzing'; Detail = 'Mounting and inventorying the selected edition.' }
         @{ Pattern = 'Copied Windows setup media'; Percent = 27; Stage = 'Preparing media'; Detail = 'Source media copy completed.' }
         @{ Pattern = 'Copying Windows setup media'; Percent = 15; Stage = 'Preparing media'; Detail = 'Copying Windows setup files.' }
+        @{ Pattern = 'Copying ISO contents into the isolated repair workspace'; Percent = 20; Stage = 'Preparing media'; Detail = 'Copying the existing ISO without servicing its Windows image.' }
         @{ Pattern = 'Validated source edition'; Percent = 10; Stage = 'Validating'; Detail = 'Source edition is supported.' }
+        @{ Pattern = 'Starting ISO repair'; Percent = 5; Stage = 'Starting'; Detail = 'Preparing the isolated repair workspace.' }
         @{ Pattern = 'Starting noninteractive'; Percent = 5; Stage = 'Starting'; Detail = 'Preparing the isolated build workspace.' }
     )
     foreach ($stage in $stages) {
@@ -211,6 +217,22 @@ function Get-WinUtilBuildForm {
     $subtitle.Location = [Drawing.Point]::new(25, 51)
     $header.Controls.Add($subtitle)
 
+    $taskLabel = [System.Windows.Forms.Label]::new()
+    $taskLabel.Text = 'Task'
+    $taskLabel.ForeColor = [Drawing.Color]::FromArgb(194, 204, 220)
+    $taskLabel.Location = [Drawing.Point]::new(720, 12)
+    $taskLabel.Size = [Drawing.Size]::new(55, 22)
+    $taskLabel.Anchor = 'Top, Right'
+    $header.Controls.Add($taskLabel)
+
+    $taskBox = [System.Windows.Forms.ComboBox]::new()
+    $taskBox.DropDownStyle = 'DropDownList'
+    $taskBox.Items.AddRange(@('Build customized ISO', 'Repair existing ISO'))
+    $taskBox.Location = [Drawing.Point]::new(775, 9)
+    $taskBox.Size = [Drawing.Size]::new(205, 28)
+    $taskBox.Anchor = 'Top, Right'
+    $header.Controls.Add($taskBox)
+
     $configuration = [System.Windows.Forms.GroupBox]::new()
     $configuration.Text = 'Build configuration'
     $configuration.Location = [Drawing.Point]::new(18, 94)
@@ -235,37 +257,38 @@ function Get-WinUtilBuildForm {
             $Button.Anchor = 'Top, Right'
             $configuration.Controls.Add($Button)
         }
+        return $rowLabel
     }
 
     $sourceBox = [System.Windows.Forms.TextBox]::new()
     $sourceBox.ReadOnly = $true
     $sourceButton = [System.Windows.Forms.Button]::new()
     $sourceButton.Text = 'Choose ISO...'
-    Add-ConfigurationRow -Label 'Source ISO' -Y 28 -Control $sourceBox -Button $sourceButton
+    $null = Add-ConfigurationRow -Label 'Source ISO' -Y 28 -Control $sourceBox -Button $sourceButton
 
     $editionBox = [System.Windows.Forms.ComboBox]::new()
     $editionBox.DropDownStyle = 'DropDownList'
     $analyzeButton = [System.Windows.Forms.Button]::new()
     $analyzeButton.Text = 'Analyze ISO'
     $analyzeButton.Enabled = $false
-    Add-ConfigurationRow -Label 'Windows edition' -Y 66 -Control $editionBox -Button $analyzeButton
+    $editionLabel = Add-ConfigurationRow -Label 'Windows edition' -Y 66 -Control $editionBox -Button $analyzeButton
 
     $profileBox = [System.Windows.Forms.ComboBox]::new()
     $profileBox.DropDownStyle = 'DropDownList'
     $profileBox.DisplayMember = 'Name'
-    Add-ConfigurationRow -Label 'Profile' -Y 104 -Control $profileBox -Button $null
+    $profileLabel = Add-ConfigurationRow -Label 'Profile' -Y 104 -Control $profileBox -Button $null
 
     $outputBox = [System.Windows.Forms.TextBox]::new()
     $outputBox.ReadOnly = $true
     $outputButton = [System.Windows.Forms.Button]::new()
     $outputButton.Text = 'Choose output...'
-    Add-ConfigurationRow -Label 'Output ISO' -Y 142 -Control $outputBox -Button $outputButton
+    $null = Add-ConfigurationRow -Label 'Output ISO' -Y 142 -Control $outputBox -Button $outputButton
 
     $driversBox = [System.Windows.Forms.TextBox]::new()
     $driversBox.ReadOnly = $true
     $driversButton = [System.Windows.Forms.Button]::new()
     $driversButton.Text = 'Optional...'
-    Add-ConfigurationRow -Label 'Driver folder' -Y 180 -Control $driversBox -Button $driversButton
+    $driversLabel = Add-ConfigurationRow -Label 'Driver folder' -Y 180 -Control $driversBox -Button $driversButton
 
     $profileSummary = [System.Windows.Forms.Label]::new()
     $profileSummary.Location = [Drawing.Point]::new(128, 216)
@@ -353,11 +376,15 @@ function Get-WinUtilBuildForm {
         AnalyzedSource = ''
         LastLog = ''
         LastSuggestedOutput = ''
+        Mode = 'Build'
+        RepairInspection = $null
     }
 
     $profiles = @(Get-WinUtilLauncherProfile)
+    $repairs = @(Get-WinUtilIsoRepairDefinition)
     foreach ($profileOption in $profiles) { [void]$profileBox.Items.Add($profileOption) }
     $profileBox.SelectedIndex = 0
+    $taskBox.SelectedIndex = 0
 
     $setStatus = {
         param ([string]$Stage, [string]$Detail, [Drawing.Color]$Color)
@@ -367,32 +394,70 @@ function Get-WinUtilBuildForm {
     }.GetNewClosure()
 
     $updateReady = {
-        $profileSelection = $profileBox.SelectedItem
-        $sourceReady = $sourceBox.Text -and $state.AnalyzedSource -eq $sourceBox.Text -and $editionBox.SelectedIndex -ge 0
+        $selection = $profileBox.SelectedItem
+        $sourceReady = $sourceBox.Text -and $state.AnalyzedSource -eq $sourceBox.Text
+        if ($state.Mode -eq 'Build') { $sourceReady = $sourceReady -and $editionBox.SelectedIndex -ge 0 }
         $outputReady = -not [string]::IsNullOrWhiteSpace($outputBox.Text)
-        $buildButton.Enabled = $null -eq $state.Build -and $sourceReady -and $outputReady -and $profileSelection -and $profileSelection.IsAvailable
+        $selectionReady = $selection -and ($state.Mode -eq 'Repair' -or $selection.IsAvailable)
+        $buildButton.Enabled = $null -eq $state.Build -and $sourceReady -and $outputReady -and $selectionReady
     }.GetNewClosure()
 
     $updateProfile = {
-        $profileSelection = $profileBox.SelectedItem
-        if (-not $profileSelection) { return }
-        if ($profileSelection.IsAvailable) {
+        $selection = $profileBox.SelectedItem
+        if (-not $selection) { return }
+        if ($state.Mode -eq 'Repair' -or $selection.IsAvailable) {
             $profileSummary.ForeColor = [Drawing.Color]::FromArgb(61, 70, 89)
-            $profileSummary.Text = $profileSelection.Description
+            $profileSummary.Text = $selection.Description
         } else {
             $profileSummary.ForeColor = [Drawing.Color]::FromArgb(180, 72, 52)
-            $profileSummary.Text = $profileSelection.UnavailableReason
+            $profileSummary.Text = $selection.UnavailableReason
         }
         if (-not $outputBox.Text -or $outputBox.Text -eq $state.LastSuggestedOutput) {
             $directory = if ($outputBox.Text) { Split-Path $outputBox.Text -Parent } else { [Environment]::GetFolderPath('Desktop') }
-            $state.LastSuggestedOutput = Join-Path $directory $profileSelection.SuggestedFileName
+            $suggestedName = if ($state.Mode -eq 'Repair') { 'Win11-Repaired.iso' } else { $selection.SuggestedFileName }
+            $state.LastSuggestedOutput = Join-Path $directory $suggestedName
             $outputBox.Text = $state.LastSuggestedOutput
         }
         & $updateReady
     }.GetNewClosure()
 
+    $setMode = {
+        $state.Mode = if ($taskBox.SelectedIndex -eq 1) { 'Repair' } else { 'Build' }
+        $state.AnalyzedSource = ''
+        $state.Editions = @()
+        $state.RepairInspection = $null
+        $editionBox.Items.Clear()
+        $profileBox.Items.Clear()
+        if ($state.Mode -eq 'Repair') {
+            $editionLabel.Text = 'Repair status'
+            $profileLabel.Text = 'Repair operation'
+            $driversLabel.Visible = $false
+            $driversBox.Visible = $false
+            $driversButton.Visible = $false
+            $analyzeButton.Text = 'Inspect ISO'
+            $buildButton.Text = 'Repair & Repackage'
+            foreach ($repairOption in $repairs) { [void]$profileBox.Items.Add($repairOption) }
+            & $setStatus 'Ready to inspect' 'Choose the existing customized ISO, inspect it, and choose a new output filename.' ([Drawing.Color]::FromArgb(40, 112, 224))
+        } else {
+            $editionLabel.Text = 'Windows edition'
+            $profileLabel.Text = 'Profile'
+            $driversLabel.Visible = $true
+            $driversBox.Visible = $true
+            $driversButton.Visible = $true
+            $analyzeButton.Text = 'Analyze ISO'
+            $buildButton.Text = 'Build ISO'
+            foreach ($profileOption in $profiles) { [void]$profileBox.Items.Add($profileOption) }
+            & $setStatus 'Ready to configure' 'Choose a source ISO, analyze its editions, and select an output location.' ([Drawing.Color]::FromArgb(40, 112, 224))
+        }
+        if ($profileBox.Items.Count -gt 0) { $profileBox.SelectedIndex = 0 }
+        $analyzeButton.Enabled = -not [string]::IsNullOrWhiteSpace($sourceBox.Text)
+        & $updateProfile
+        & $updateReady
+    }.GetNewClosure()
+
     $setConfigurationEnabled = {
         param ([bool]$Enabled)
+        $taskBox.Enabled = $Enabled
         $sourceButton.Enabled = $Enabled
         $analyzeButton.Enabled = $Enabled -and -not [string]::IsNullOrWhiteSpace($sourceBox.Text)
         $profileBox.Enabled = $Enabled
@@ -412,9 +477,11 @@ function Get-WinUtilBuildForm {
                 $sourceBox.Text = $dialog.FileName
                 $state.AnalyzedSource = ''
                 $state.Editions = @()
+                $state.RepairInspection = $null
                 $editionBox.Items.Clear()
                 $analyzeButton.Enabled = $true
-                & $setStatus 'Source selected' 'Click Analyze ISO to validate the image and load its Windows editions.' ([Drawing.Color]::FromArgb(40, 112, 224))
+                $nextAction = if ($state.Mode -eq 'Repair') { 'Click Inspect ISO to validate that the selected repair applies.' } else { 'Click Analyze ISO to validate the image and load its Windows editions.' }
+                & $setStatus 'Source selected' $nextAction ([Drawing.Color]::FromArgb(40, 112, 224))
                 & $updateReady
             }
         } finally { $dialog.Dispose() }
@@ -422,22 +489,46 @@ function Get-WinUtilBuildForm {
 
     $analyzeButton.Add_Click({
         $form.UseWaitCursor = $true
-        & $setStatus 'Analyzing source ISO' 'Mounting the source read-only and validating Windows 11 25H2 metadata.' ([Drawing.Color]::FromArgb(40, 112, 224))
+        $analysisDetail = if ($state.Mode -eq 'Repair') { 'Mounting the ISO read-only and checking the selected repair.' } else { 'Mounting the source read-only and validating Windows 11 25H2 metadata.' }
+        & $setStatus 'Analyzing source ISO' $analysisDetail ([Drawing.Color]::FromArgb(40, 112, 224))
         $form.Refresh()
         try {
-            $provider = Get-WinUtilWindowsBuildProvider
-            $state.Editions = @(Get-WinUtilSupportedEdition -SourceIsoPath $sourceBox.Text -BuildProvider $provider)
-            $editionBox.Items.Clear()
-            foreach ($edition in $state.Editions) {
-                [void]$editionBox.Items.Add(('{0}: {1}' -f $edition.ImageIndex, $edition.ImageName))
+            if ($state.Mode -eq 'Repair') {
+                $repairSelection = $profileBox.SelectedItem
+                if (-not $repairSelection) { throw 'Select a repair operation first.' }
+                $repairProvider = Get-WinUtilIsoRepairProvider
+                $repairMounted = $false
+                try {
+                    $repairMediaRoot = & $repairProvider.MountIso $sourceBox.Text
+                    $repairMounted = $true
+                    $state.RepairInspection = & $repairSelection.Test $repairMediaRoot
+                } finally {
+                    if ($repairMounted) { & $repairProvider.DismountIso $sourceBox.Text }
+                }
+                if (-not $state.RepairInspection -or $state.RepairInspection.IsApplicable -ne $true) {
+                    throw 'The selected repair is not applicable to this ISO.'
+                }
+                $editionBox.Items.Clear()
+                [void]$editionBox.Items.Add(('Applicable to image index {0}' -f $state.RepairInspection.ImageIndex))
+                $editionBox.SelectedIndex = 0
+                $state.AnalyzedSource = $sourceBox.Text
+                & $setStatus 'Repair is applicable' 'The ISO can be repaired without repeating Windows image servicing.' ([Drawing.Color]::FromArgb(34, 126, 76))
+            } else {
+                $provider = Get-WinUtilWindowsBuildProvider
+                $state.Editions = @(Get-WinUtilSupportedEdition -SourceIsoPath $sourceBox.Text -BuildProvider $provider)
+                $editionBox.Items.Clear()
+                foreach ($edition in $state.Editions) {
+                    [void]$editionBox.Items.Add(('{0}: {1}' -f $edition.ImageIndex, $edition.ImageName))
+                }
+                if ($editionBox.Items.Count -eq 0) { throw 'The source ISO contains no selectable editions.' }
+                $editionBox.SelectedIndex = 0
+                $state.AnalyzedSource = $sourceBox.Text
+                & $setStatus 'Source ISO ready' "$($editionBox.Items.Count) supported edition(s) found. Review the configuration and build when ready." ([Drawing.Color]::FromArgb(34, 126, 76))
             }
-            if ($editionBox.Items.Count -eq 0) { throw 'The source ISO contains no selectable editions.' }
-            $editionBox.SelectedIndex = 0
-            $state.AnalyzedSource = $sourceBox.Text
-            & $setStatus 'Source ISO ready' "$($editionBox.Items.Count) supported edition(s) found. Review the configuration and build when ready." ([Drawing.Color]::FromArgb(34, 126, 76))
         } catch {
             $state.AnalyzedSource = ''
             $state.Editions = @()
+            $state.RepairInspection = $null
             $editionBox.Items.Clear()
             & $setStatus 'Source analysis failed' $_.Exception.Message ([Drawing.Color]::FromArgb(185, 54, 54))
             Show-WinUtilMessage -Title 'Source ISO rejected' -Icon Error -Text $_.Exception.Message
@@ -447,18 +538,26 @@ function Get-WinUtilBuildForm {
         }
     }.GetNewClosure())
 
-    $profileBox.Add_SelectedIndexChanged({ & $updateProfile }.GetNewClosure())
+    $taskBox.Add_SelectedIndexChanged({ if (-not $state.Build) { & $setMode } }.GetNewClosure())
+    $profileBox.Add_SelectedIndexChanged({
+        if ($state.Mode -eq 'Repair') {
+            $state.AnalyzedSource = ''
+            $state.RepairInspection = $null
+            $editionBox.Items.Clear()
+        }
+        & $updateProfile
+    }.GetNewClosure())
     $editionBox.Add_SelectedIndexChanged({ & $updateReady }.GetNewClosure())
 
     $outputButton.Add_Click({
-        $profileSelection = $profileBox.SelectedItem
+        $selectedOption = $profileBox.SelectedItem
         $dialog = [System.Windows.Forms.SaveFileDialog]::new()
         try {
             $dialog.Title = 'Save the customized Windows ISO'
             $dialog.Filter = 'Windows ISO (*.iso)|*.iso'
             $dialog.DefaultExt = 'iso'
             $dialog.AddExtension = $true
-            $dialog.FileName = if ($profileSelection) { $profileSelection.SuggestedFileName } else { 'Win11-Custom.iso' }
+            $dialog.FileName = if ($state.Mode -eq 'Repair') { 'Win11-Repaired.iso' } elseif ($selectedOption) { $selectedOption.SuggestedFileName } else { 'Win11-Custom.iso' }
             $dialog.InitialDirectory = if ($outputBox.Text) { Split-Path $outputBox.Text -Parent } else { [Environment]::GetFolderPath('Desktop') }
             $dialog.OverwritePrompt = $false
             if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
@@ -510,9 +609,11 @@ function Get-WinUtilBuildForm {
             $items = @($build.PowerShell.EndInvoke($build.AsyncResult))
             $result = @($items | Where-Object { $_.PSObject.Properties['OutputIsoPath'] }) | Select-Object -Last 1
             if (-not $result) { throw 'The build completed without returning an ISO result.' }
-            if (-not (Test-Path -LiteralPath $result.OutputIsoPath -PathType Leaf) -or
-                -not (Test-Path -LiteralPath $result.EvidenceDirectory -PathType Container)) {
-                throw 'The build did not publish both the ISO and its evidence directory.'
+            if (-not (Test-Path -LiteralPath $result.OutputIsoPath -PathType Leaf)) {
+                throw 'The operation did not publish its output ISO.'
+            }
+            if ($build.Mode -eq 'Build' -and -not (Test-Path -LiteralPath $result.EvidenceDirectory -PathType Container)) {
+                throw 'The build did not publish its evidence directory.'
             }
         } catch {
             $failure = $_.Exception.Message
@@ -532,27 +633,39 @@ function Get-WinUtilBuildForm {
         }
 
         $progress = Get-WinUtilBuildProgress -IsComplete
+        if ($build.Mode -eq 'Repair') { $progress.Detail = 'The repaired ISO is ready.' }
         $progressBar.Value = $progress.Percent
         & $setStatus $progress.Stage $progress.Detail ([Drawing.Color]::FromArgb(34, 126, 76))
         $openIsoButton.Tag = $result.OutputIsoPath
-        $openEvidenceButton.Tag = $result.EvidenceDirectory
         $openIsoButton.Enabled = $true
-        $openEvidenceButton.Enabled = $true
+        if ($build.Mode -eq 'Build') {
+            $openEvidenceButton.Tag = $result.EvidenceDirectory
+            $openEvidenceButton.Enabled = $true
+        } else {
+            $openEvidenceButton.Tag = $null
+            $openEvidenceButton.Enabled = $false
+        }
         if ($result.CleanupWarning) {
             Show-WinUtilMessage -Title 'ISO complete with cleanup warning' -Icon Warning -Text "$($progress.Detail)`n`n$($result.CleanupWarning)"
         } else {
-            Show-WinUtilMessage -Title 'ISO build complete' -Text "The ISO and verification evidence are ready.`n`n$($result.OutputIsoPath)"
+            $completionText = if ($build.Mode -eq 'Repair') { 'The repaired ISO is ready.' } else { 'The ISO and verification evidence are ready.' }
+            Show-WinUtilMessage -Title 'ISO operation complete' -Text "$completionText`n`n$($result.OutputIsoPath)"
         }
     }.GetNewClosure())
 
     $buildButton.Add_Click({
-        $profileSelection = $profileBox.SelectedItem
-        if (-not $profileSelection -or -not $profileSelection.IsAvailable) {
-            Show-WinUtilMessage -Title 'Profile unavailable' -Icon Warning -Text $profileSelection.UnavailableReason
+        $selectedOption = $profileBox.SelectedItem
+        if (-not $selectedOption) {
+            Show-WinUtilMessage -Title 'Selection required' -Icon Warning -Text 'Select a profile or repair operation.'
             return
         }
-        if ($state.AnalyzedSource -ne $sourceBox.Text -or $editionBox.SelectedIndex -lt 0) {
-            Show-WinUtilMessage -Title 'Analyze the source first' -Icon Warning -Text 'Choose and analyze the source ISO before building.'
+        if ($state.Mode -eq 'Build' -and -not $selectedOption.IsAvailable) {
+            Show-WinUtilMessage -Title 'Profile unavailable' -Icon Warning -Text $selectedOption.UnavailableReason
+            return
+        }
+        if ($state.AnalyzedSource -ne $sourceBox.Text -or ($state.Mode -eq 'Build' -and $editionBox.SelectedIndex -lt 0) -or
+            ($state.Mode -eq 'Repair' -and -not $state.RepairInspection)) {
+            Show-WinUtilMessage -Title 'Analyze the source first' -Icon Warning -Text 'Choose and analyze or inspect the source ISO before continuing.'
             return
         }
         if (-not $outputBox.Text) {
@@ -563,7 +676,7 @@ function Get-WinUtilBuildForm {
             Show-WinUtilMessage -Title 'Output already exists' -Icon Warning -Text 'Choose a new ISO filename; existing output is never overwritten.'
             return
         }
-        if ($driversBox.Text -and -not (Test-Path -LiteralPath $driversBox.Text -PathType Container)) {
+        if ($state.Mode -eq 'Build' -and $driversBox.Text -and -not (Test-Path -LiteralPath $driversBox.Text -PathType Container)) {
             Show-WinUtilMessage -Title 'Driver folder missing' -Icon Warning -Text 'The selected driver folder no longer exists.'
             return
         }
@@ -576,35 +689,49 @@ function Get-WinUtilBuildForm {
             if (-not $oscdimg) { $oscdimg = Install-WinUtilOscdimg }
             if (-not $oscdimg) { throw 'oscdimg is required. Install Windows ADK Deployment Tools, then reopen the launcher.' }
 
-            $edition = $state.Editions[$editionBox.SelectedIndex]
             $outputDirectory = Split-Path ([IO.Path]::GetFullPath($outputBox.Text)) -Parent
-            $workDirectory = Join-Path $outputDirectory ('.WinUtil-build-{0}' -f [guid]::NewGuid().ToString('N'))
-            $logPath = Join-Path $workDirectory 'WinUtil_Win11ISO.log'
-
             $powerShell = [PowerShell]::Create()
-            [void]$powerShell.AddCommand((Join-Path $script:RepositoryRoot 'tools\Invoke-WinUtilWindowsBuild.ps1'))
-            [void]$powerShell.AddParameter('SourceIsoPath', $sourceBox.Text)
-            [void]$powerShell.AddParameter('ImageIndex', [int]$edition.ImageIndex)
-            [void]$powerShell.AddParameter('ComponentProfile', [string]$profileSelection.Id)
-            [void]$powerShell.AddParameter('OutputIsoPath', $outputBox.Text)
-            [void]$powerShell.AddParameter('WorkDirectory', $workDirectory)
-            [void]$powerShell.AddParameter('OscdimgPath', $oscdimg)
-            [void]$powerShell.AddParameter('RemoveWorkDirectoryOnSuccess', $true)
-            if ($profileSelection.ExpertMode) { [void]$powerShell.AddParameter('ExpertMode', $true) }
-            if ($driversBox.Text) { [void]$powerShell.AddParameter('DriverDirectory', $driversBox.Text) }
+            if ($state.Mode -eq 'Repair') {
+                $workDirectory = Join-Path $outputDirectory ('.WinUtil-repair-{0}' -f [guid]::NewGuid().ToString('N'))
+                $logPath = Join-Path $workDirectory 'WinUtil_ISORepair.log'
+                [void]$powerShell.AddCommand((Join-Path $script:RepositoryRoot 'tools\Invoke-WinUtilIsoRepair.ps1'))
+                [void]$powerShell.AddParameter('SourceIsoPath', $sourceBox.Text)
+                [void]$powerShell.AddParameter('OutputIsoPath', $outputBox.Text)
+                [void]$powerShell.AddParameter('WorkDirectory', $workDirectory)
+                [void]$powerShell.AddParameter('OscdimgPath', $oscdimg)
+                [void]$powerShell.AddParameter('RepairId', @([string]$selectedOption.Id))
+                [void]$powerShell.AddParameter('RemoveWorkDirectoryOnSuccess', $true)
+                $operationStatus = "Repairing with '$($selectedOption.Name)'. Do not close this window."
+            } else {
+                $edition = $state.Editions[$editionBox.SelectedIndex]
+                $workDirectory = Join-Path $outputDirectory ('.WinUtil-build-{0}' -f [guid]::NewGuid().ToString('N'))
+                $logPath = Join-Path $workDirectory 'WinUtil_Win11ISO.log'
+                [void]$powerShell.AddCommand((Join-Path $script:RepositoryRoot 'tools\Invoke-WinUtilWindowsBuild.ps1'))
+                [void]$powerShell.AddParameter('SourceIsoPath', $sourceBox.Text)
+                [void]$powerShell.AddParameter('ImageIndex', [int]$edition.ImageIndex)
+                [void]$powerShell.AddParameter('ComponentProfile', [string]$selectedOption.Id)
+                [void]$powerShell.AddParameter('OutputIsoPath', $outputBox.Text)
+                [void]$powerShell.AddParameter('WorkDirectory', $workDirectory)
+                [void]$powerShell.AddParameter('OscdimgPath', $oscdimg)
+                [void]$powerShell.AddParameter('RemoveWorkDirectoryOnSuccess', $true)
+                if ($selectedOption.ExpertMode) { [void]$powerShell.AddParameter('ExpertMode', $true) }
+                if ($driversBox.Text) { [void]$powerShell.AddParameter('DriverDirectory', $driversBox.Text) }
+                $operationStatus = "Building $($selectedOption.Name) for $($edition.ImageName). Do not close this window."
+            }
 
             $state.Build = [pscustomobject]@{
                 PowerShell = $powerShell
                 AsyncResult = $powerShell.BeginInvoke()
                 LogPath = $logPath
+                Mode = $state.Mode
             }
             $state.LastLog = ''
-            $logBox.Text = "Build queued. Waiting for the first durable log entry...`r`n"
+            $logBox.Text = "Operation queued. Waiting for the first durable log entry...`r`n"
             $progressBar.Value = 2
             $openIsoButton.Enabled = $false
             $openEvidenceButton.Enabled = $false
             & $setConfigurationEnabled $false
-            & $setStatus 'Starting' "Building $($profileSelection.Name) for $($edition.ImageName). Do not close this window." ([Drawing.Color]::FromArgb(40, 112, 224))
+            & $setStatus 'Starting' $operationStatus ([Drawing.Color]::FromArgb(40, 112, 224))
             $timer.Start()
         } catch {
             if ($state.Build -and $state.Build.PowerShell) { $state.Build.PowerShell.Dispose() }
@@ -631,8 +758,7 @@ function Get-WinUtilBuildForm {
         }
     }.GetNewClosure())
 
-    & $updateProfile
-    & $updateReady
+    & $setMode
     return $form
 }
 
@@ -643,6 +769,7 @@ function Invoke-WinUtilLeanDawLauncher {
 
     if (-not (Request-WinUtilAdministrator)) { return }
     . (Join-Path $script:RepositoryRoot 'tools\Invoke-WinUtilWindowsBuild.ps1')
+    . (Join-Path $script:RepositoryRoot 'tools\Invoke-WinUtilIsoRepair.ps1')
 
     $form = Get-WinUtilBuildForm
     try { [void]$form.ShowDialog() } finally { $form.Dispose() }
