@@ -185,3 +185,4 @@ When the user corrects an agent approach, add or tighten one concrete rule here 
 - Keep small ISO repair operations inside the existing human launcher. Extend the repair-definition list and shared copy/repackage pipeline; do not add a second CMD, another wizard, or speculative repair operations.
 - Dot-source launcher engine dependencies at script scope, not inside the startup function; deferred Windows Forms event handlers must be able to resolve the same provider functions after form construction.
 - Show primary launcher workflows as always-visible tabs in the main workspace; do not hide Build/Repair modes behind a compact dropdown or duplicate the underlying configuration and orchestration per tab.
+- Keep every tab's required actions in a docked/table layout with its primary action inside the tab, and run the Windows layout contract before showing the form; fixed right-edge/bottom coordinates are not sufficient UI verification across DPI and window sizes.
