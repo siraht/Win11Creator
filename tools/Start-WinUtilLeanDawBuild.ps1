@@ -8,6 +8,8 @@ $script:PowerShellExe = if ($env:SystemRoot) {
 } else {
     'powershell.exe'
 }
+. (Join-Path $script:RepositoryRoot 'tools/Invoke-WinUtilWindowsBuild.ps1')
+. (Join-Path $script:RepositoryRoot 'tools/Invoke-WinUtilIsoRepair.ps1')
 
 function Test-WinUtilAdministrator {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -768,8 +770,6 @@ function Invoke-WinUtilLeanDawLauncher {
     Add-Type -AssemblyName System.Drawing
 
     if (-not (Request-WinUtilAdministrator)) { return }
-    . (Join-Path $script:RepositoryRoot 'tools\Invoke-WinUtilWindowsBuild.ps1')
-    . (Join-Path $script:RepositoryRoot 'tools\Invoke-WinUtilIsoRepair.ps1')
 
     $form = Get-WinUtilBuildForm
     try { [void]$form.ShowDialog() } finally { $form.Dispose() }

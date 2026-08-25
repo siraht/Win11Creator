@@ -28,8 +28,10 @@ Describe 'Win11 Creator human launcher' {
 
         $script:powershellLauncher | Should -Match ([regex]::Escape("'Build customized ISO', 'Repair existing ISO'"))
         $script:powershellLauncher | Should -Match ([regex]::Escape('Get-WinUtilIsoRepairDefinition'))
-        $script:powershellLauncher | Should -Match ([regex]::Escape("tools\Invoke-WinUtilIsoRepair.ps1"))
+        $script:powershellLauncher | Should -Match ([regex]::Escape('Invoke-WinUtilIsoRepair.ps1'))
         @($rootCommandFiles.Name | Where-Object { $_ -match 'Repair' }) | Should -HaveCount 0
+        Get-Command Get-WinUtilIsoRepairProvider -CommandType Function -ErrorAction Stop | Should -Not -BeNullOrEmpty
+        Get-Command Get-WinUtilWindowsBuildProvider -CommandType Function -ErrorAction Stop | Should -Not -BeNullOrEmpty
     }
 
     It 'offers only buildable profiles while explaining the unsupported Defender-removal profile' {
