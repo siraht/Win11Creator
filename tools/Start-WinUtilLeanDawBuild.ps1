@@ -193,8 +193,8 @@ function Get-WinUtilBuildForm {
     $form = [System.Windows.Forms.Form]::new()
     $form.Text = 'Win11 Creator - ISO Builder'
     $form.StartPosition = 'CenterScreen'
-    $form.Size = [Drawing.Size]::new(1040, 820)
-    $form.MinimumSize = [Drawing.Size]::new(940, 720)
+    $form.Size = [Drawing.Size]::new(1040, 860)
+    $form.MinimumSize = [Drawing.Size]::new(940, 760)
     $form.BackColor = [Drawing.Color]::FromArgb(245, 247, 250)
     $form.Font = [Drawing.Font]::new('Segoe UI', 9)
 
@@ -219,28 +219,23 @@ function Get-WinUtilBuildForm {
     $subtitle.Location = [Drawing.Point]::new(25, 51)
     $header.Controls.Add($subtitle)
 
-    $taskLabel = [System.Windows.Forms.Label]::new()
-    $taskLabel.Text = 'Task'
-    $taskLabel.ForeColor = [Drawing.Color]::FromArgb(194, 204, 220)
-    $taskLabel.Location = [Drawing.Point]::new(720, 12)
-    $taskLabel.Size = [Drawing.Size]::new(55, 22)
-    $taskLabel.Anchor = 'Top, Right'
-    $header.Controls.Add($taskLabel)
-
-    $taskBox = [System.Windows.Forms.ComboBox]::new()
-    $taskBox.DropDownStyle = 'DropDownList'
-    $taskBox.Items.AddRange(@('Build customized ISO', 'Repair existing ISO'))
-    $taskBox.Location = [Drawing.Point]::new(775, 9)
-    $taskBox.Size = [Drawing.Size]::new(205, 28)
-    $taskBox.Anchor = 'Top, Right'
-    $header.Controls.Add($taskBox)
+    $taskTabs = [System.Windows.Forms.TabControl]::new()
+    $taskTabs.Location = [Drawing.Point]::new(18, 92)
+    $taskTabs.Size = [Drawing.Size]::new(986, 285)
+    $taskTabs.Anchor = 'Top, Left, Right'
+    $taskTabs.Font = [Drawing.Font]::new('Segoe UI Semibold', 10)
+    $buildTab = [System.Windows.Forms.TabPage]::new('Build customized ISO')
+    $repairTab = [System.Windows.Forms.TabPage]::new('Repair existing ISO')
+    $taskTabs.TabPages.AddRange(@($buildTab, $repairTab))
+    $form.Controls.Add($taskTabs)
 
     $configuration = [System.Windows.Forms.GroupBox]::new()
     $configuration.Text = 'Build configuration'
-    $configuration.Location = [Drawing.Point]::new(18, 94)
-    $configuration.Size = [Drawing.Size]::new(986, 260)
-    $configuration.Anchor = 'Top, Left, Right'
-    $form.Controls.Add($configuration)
+    $configuration.Font = [Drawing.Font]::new('Segoe UI', 9)
+    $configuration.Location = [Drawing.Point]::new(4, 5)
+    $configuration.Size = [Drawing.Size]::new(970, 250)
+    $configuration.Anchor = 'Top, Bottom, Left, Right'
+    $buildTab.Controls.Add($configuration)
 
     function Add-ConfigurationRow {
         param ([string]$Label, [int]$Y, $Control, $Button)
@@ -300,7 +295,7 @@ function Get-WinUtilBuildForm {
     $configuration.Controls.Add($profileSummary)
 
     $progressPanel = [System.Windows.Forms.Panel]::new()
-    $progressPanel.Location = [Drawing.Point]::new(18, 368)
+    $progressPanel.Location = [Drawing.Point]::new(18, 390)
     $progressPanel.Size = [Drawing.Size]::new(986, 104)
     $progressPanel.Anchor = 'Top, Left, Right'
     $progressPanel.BackColor = [Drawing.Color]::White
@@ -330,13 +325,13 @@ function Get-WinUtilBuildForm {
     $logLabel = [System.Windows.Forms.Label]::new()
     $logLabel.Text = 'Live build log'
     $logLabel.Font = [Drawing.Font]::new('Segoe UI Semibold', 10)
-    $logLabel.Location = [Drawing.Point]::new(18, 485)
+    $logLabel.Location = [Drawing.Point]::new(18, 507)
     $logLabel.AutoSize = $true
     $form.Controls.Add($logLabel)
 
     $logBox = [System.Windows.Forms.RichTextBox]::new()
-    $logBox.Location = [Drawing.Point]::new(18, 510)
-    $logBox.Size = [Drawing.Size]::new(986, 210)
+    $logBox.Location = [Drawing.Point]::new(18, 532)
+    $logBox.Size = [Drawing.Size]::new(986, 220)
     $logBox.Anchor = 'Top, Bottom, Left, Right'
     $logBox.ReadOnly = $true
     $logBox.BackColor = [Drawing.Color]::FromArgb(20, 25, 35)
@@ -351,7 +346,7 @@ function Get-WinUtilBuildForm {
     $buildButton.BackColor = [Drawing.Color]::FromArgb(40, 112, 224)
     $buildButton.ForeColor = [Drawing.Color]::White
     $buildButton.FlatStyle = 'Flat'
-    $buildButton.Location = [Drawing.Point]::new(18, 734)
+    $buildButton.Location = [Drawing.Point]::new(18, 766)
     $buildButton.Size = [Drawing.Size]::new(150, 38)
     $buildButton.Anchor = 'Bottom, Left'
     $form.Controls.Add($buildButton)
@@ -359,7 +354,7 @@ function Get-WinUtilBuildForm {
     $openIsoButton = [System.Windows.Forms.Button]::new()
     $openIsoButton.Text = 'Open ISO location'
     $openIsoButton.Enabled = $false
-    $openIsoButton.Location = [Drawing.Point]::new(180, 734)
+    $openIsoButton.Location = [Drawing.Point]::new(180, 766)
     $openIsoButton.Size = [Drawing.Size]::new(150, 38)
     $openIsoButton.Anchor = 'Bottom, Left'
     $form.Controls.Add($openIsoButton)
@@ -367,7 +362,7 @@ function Get-WinUtilBuildForm {
     $openEvidenceButton = [System.Windows.Forms.Button]::new()
     $openEvidenceButton.Text = 'Open evidence'
     $openEvidenceButton.Enabled = $false
-    $openEvidenceButton.Location = [Drawing.Point]::new(342, 734)
+    $openEvidenceButton.Location = [Drawing.Point]::new(342, 766)
     $openEvidenceButton.Size = [Drawing.Size]::new(150, 38)
     $openEvidenceButton.Anchor = 'Bottom, Left'
     $form.Controls.Add($openEvidenceButton)
@@ -386,7 +381,7 @@ function Get-WinUtilBuildForm {
     $repairs = @(Get-WinUtilIsoRepairDefinition)
     foreach ($profileOption in $profiles) { [void]$profileBox.Items.Add($profileOption) }
     $profileBox.SelectedIndex = 0
-    $taskBox.SelectedIndex = 0
+    $taskTabs.SelectedIndex = 0
 
     $setStatus = {
         param ([string]$Stage, [string]$Detail, [Drawing.Color]$Color)
@@ -424,7 +419,9 @@ function Get-WinUtilBuildForm {
     }.GetNewClosure()
 
     $setMode = {
-        $state.Mode = if ($taskBox.SelectedIndex -eq 1) { 'Repair' } else { 'Build' }
+        $state.Mode = if ($taskTabs.SelectedIndex -eq 1) { 'Repair' } else { 'Build' }
+        $selectedTab = if ($state.Mode -eq 'Repair') { $repairTab } else { $buildTab }
+        $selectedTab.Controls.Add($configuration)
         $state.AnalyzedSource = ''
         $state.Editions = @()
         $state.RepairInspection = $null
@@ -459,7 +456,7 @@ function Get-WinUtilBuildForm {
 
     $setConfigurationEnabled = {
         param ([bool]$Enabled)
-        $taskBox.Enabled = $Enabled
+        $taskTabs.Enabled = $Enabled
         $sourceButton.Enabled = $Enabled
         $analyzeButton.Enabled = $Enabled -and -not [string]::IsNullOrWhiteSpace($sourceBox.Text)
         $profileBox.Enabled = $Enabled
@@ -540,7 +537,7 @@ function Get-WinUtilBuildForm {
         }
     }.GetNewClosure())
 
-    $taskBox.Add_SelectedIndexChanged({ if (-not $state.Build) { & $setMode } }.GetNewClosure())
+    $taskTabs.Add_SelectedIndexChanged({ if (-not $state.Build) { & $setMode } }.GetNewClosure())
     $profileBox.Add_SelectedIndexChanged({
         if ($state.Mode -eq 'Repair') {
             $state.AnalyzedSource = ''
