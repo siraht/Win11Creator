@@ -778,47 +778,68 @@ function Get-WinUtilBuildForm {
 function Assert-WinUtilBuildFormLayout {
     param ([Parameter(Mandatory)]$Form)
 
-    $Form.CreateControl()
-    $tabs = @($Form.Controls.Find('IsoTaskTabs', $true))
-    if ($tabs.Count -ne 1 -or $tabs[0].TabPages.Count -ne 2) {
-        throw 'The ISO workspace must expose exactly one Build/Repair tab control with two tabs.'
-    }
-    $taskTabs = $tabs[0]
-    $taskTabs.CreateControl()
-    $requiredActions = @('SourceIsoButton', 'AnalyzeIsoButton', 'OutputIsoButton', 'PrimaryIsoActionButton')
-    foreach ($tabIndex in 0, 1) {
-        $taskTabs.SelectedIndex = $tabIndex
+    $wasVisible = $Form.Visible
+    $originalOpacity = $Form.Opacity
+    $originalShowInTaskbar = $Form.ShowInTaskbar
+    try {
+        if (-not $wasVisible) {
+            $Form.ShowInTaskbar = $false
+            $Form.Opacity = 0
+            $Form.Show()
+            [System.Windows.Forms.Application]::DoEvents()
+        }
+
+        $tabs = @($Form.Controls.Find('IsoTaskTabs', $true))
+        if ($tabs.Count -ne 1 -or $tabs[0].TabPages.Count -ne 2) {
+            throw 'The ISO workspace must expose exactly one Build/Repair tab control with two tabs.'
+        }
+        $taskTabs = $tabs[0]
+        $requiredActions = @('SourceIsoButton', 'AnalyzeIsoButton', 'OutputIsoButton', 'PrimaryIsoActionButton')
+        foreach ($tabIndex in 0, 1) {
+            $taskTabs.SelectedIndex = $tabIndex
+            [System.Windows.Forms.Application]::DoEvents()
+            $Form.PerformLayout()
+            $taskTabs.PerformLayout()
+            [System.Windows.Forms.Application]::DoEvents()
+            $configurationMatches = @($Form.Controls.Find('IsoConfigurationPanel', $true))
+            if ($configurationMatches.Count -ne 1 -or $configurationMatches[0].Parent -ne $taskTabs.SelectedTab) {
+                throw "The shared ISO configuration panel is not attached to tab index $tabIndex."
+            }
+            $configuration = $configurationMatches[0]
+            $configuration.PerformLayout()
+            [System.Windows.Forms.Application]::DoEvents()
+            foreach ($actionName in $requiredActions) {
+                $actionMatches = @($configuration.Controls.Find($actionName, $true))
+                if ($actionMatches.Count -ne 1) { throw "Required ISO action '$actionName' is missing from tab index $tabIndex." }
+                $action = $actionMatches[0]
+                if ($action.Width -lt 1 -or $action.Height -lt 1 -or $action.Left -lt 0 -or $action.Top -lt 0 -or
+                    $action.Right -gt $configuration.ClientSize.Width -or $action.Bottom -gt $configuration.ClientSize.Height) {
+                    throw "Required ISO action '$actionName' is outside the visible configuration area on tab index $tabIndex."
+                }
+            }
+            $primaryAction = @($configuration.Controls.Find('PrimaryIsoActionButton', $true))[0]
+            $expectedPrimaryText = if ($tabIndex -eq 0) { 'Build ISO' } else { 'Repair & Repackage' }
+            if ($primaryAction.Text -ne $expectedPrimaryText) {
+                throw "Tab index $tabIndex has primary action '$($primaryAction.Text)' instead of '$expectedPrimaryText'."
+            }
+            if ($tabIndex -eq 0) {
+                $driverActions = @($configuration.Controls.Find('DriverFolderButton', $true))
+                if ($driverActions.Count -ne 1 -or $driverActions[0].Width -lt 1 -or $driverActions[0].Height -lt 1) {
+                    throw 'The Build tab is missing its driver-folder action.'
+                }
+            }
+        }
+        $taskTabs.SelectedIndex = 0
         $Form.PerformLayout()
         $taskTabs.PerformLayout()
-        $configurationMatches = @($Form.Controls.Find('IsoConfigurationPanel', $true))
-        if ($configurationMatches.Count -ne 1 -or $configurationMatches[0].Parent -ne $taskTabs.SelectedTab) {
-            throw "The shared ISO configuration panel is not attached to tab index $tabIndex."
-        }
-        $configuration = $configurationMatches[0]
-        $configuration.CreateControl()
-        $configuration.PerformLayout()
-        foreach ($actionName in $requiredActions) {
-            $actionMatches = @($configuration.Controls.Find($actionName, $true))
-            if ($actionMatches.Count -ne 1) { throw "Required ISO action '$actionName' is missing from tab index $tabIndex." }
-            $action = $actionMatches[0]
-            if ($action.Width -lt 1 -or $action.Height -lt 1 -or $action.Left -lt 0 -or $action.Top -lt 0 -or
-                $action.Right -gt $configuration.ClientSize.Width -or $action.Bottom -gt $configuration.ClientSize.Height) {
-                throw "Required ISO action '$actionName' is outside the visible configuration area on tab index $tabIndex."
-            }
-        }
-        $primaryAction = @($configuration.Controls.Find('PrimaryIsoActionButton', $true))[0]
-        $expectedPrimaryText = if ($tabIndex -eq 0) { 'Build ISO' } else { 'Repair & Repackage' }
-        if ($primaryAction.Text -ne $expectedPrimaryText) {
-            throw "Tab index $tabIndex has primary action '$($primaryAction.Text)' instead of '$expectedPrimaryText'."
-        }
-        if ($tabIndex -eq 0) {
-            $driverActions = @($configuration.Controls.Find('DriverFolderButton', $true))
-            if ($driverActions.Count -ne 1 -or $driverActions[0].Width -lt 1 -or $driverActions[0].Height -lt 1) {
-                throw 'The Build tab is missing its driver-folder action.'
-            }
+        [System.Windows.Forms.Application]::DoEvents()
+    } finally {
+        if (-not $wasVisible) {
+            $Form.Hide()
+            $Form.Opacity = $originalOpacity
+            $Form.ShowInTaskbar = $originalShowInTaskbar
         }
     }
-    $taskTabs.SelectedIndex = 0
 }
 
 function Invoke-WinUtilLeanDawLauncher {
