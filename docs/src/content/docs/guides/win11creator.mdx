@@ -33,6 +33,8 @@ In this fork's repository checkout, double-click `Build-LeanDAW.cmd` for the sim
 
 The Defender-retained Lean DAW profile is available. The original Defender-removal profile remains visible with its blocking explanation, but cannot be built because the supported Windows 11 25H2 servicing surface does not expose a removable Defender AV-core target. The launcher never overwrites an existing output and removes its unique temporary work directory only after the ISO and evidence are published successfully. Keep at least 50 GB free on the selected output drive for this deep-servicing path.
 
+The same window also has a **Repair existing ISO** task. Repair mode inspects the selected ISO read-only, lists the repair operations implemented by this version, and creates a new bootable ISO without servicing `install.wim`. The current operation fixes the Enterprise Evaluation product-key validation error caused by a synthesized Retail `ei.cfg`. It refuses unrelated media, answer files containing a product key, ambiguous image selection, stale output, and partial packaging success. The original ISO is never modified.
+
 The steps below describe the full WinUtil Win11 Creator tab, including direct USB output.
 
 ---
