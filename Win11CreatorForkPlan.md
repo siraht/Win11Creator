@@ -14,7 +14,7 @@
 
 This compact record is the project owner's requested source for progress, decisions, rationale, lessons, and verification gaps. Update it when a change affects implementation direction or closes a plan item; do not duplicate ordinary commit history or test output here.
 
-**Current status:** Ready for the next local-Windows repair/install attempt, but not yet release-proven. `lean-daw-defender-retained` preserves every Lean DAW action except Defender, which is explicitly kept; the original Defender-removal profile remains visible but fail-closed because the official 25H2 client image exposes no supported removable AV-core target. The root `Build-LeanDAW.cmd` opens one persistent window for both full builds and small ISO repairs, with source inspection, applicable configuration, progress, live logs, and output links. The first repair removes the erroneous Retail Evaluation override without re-servicing `install.wim`. Focused portable verification passes, while Windows Forms interaction and a successful repaired-ISO Ventoy installation still require the local Windows machine. No prior VPS VM, source ISO, output ISO, mount, or validation artifact remains.
+**Current status:** The policy, inventory, resolver, single-mount servicing, image-format, output-integrity, and most customization UI work already live in WinUtil's compiled WPF architecture. The late standalone WinForms launcher duplicated the native `Win11ISO` UI and is no longer the target product surface. The immediate implementation priority is the native-WinUtil consolidation in section 3A: move Repair into the existing WPF ISO workspace, route Build and Repair through shared compiled functions, reduce `Build-LeanDAW.cmd` to a bootstrap, and retire the duplicate form after parity is proven. `lean-daw-defender-retained` remains the buildable reference profile; full Defender removal remains fail-closed because the official 25H2 client image exposes no supported removable AV-core target. No prior VPS VM, source ISO, output ISO, mount, or validation artifact remains.
 
 **Pinned baseline**
 
@@ -62,12 +62,13 @@ This compact record is the project owner's requested source for progress, decisi
 * Treat native packaging stderr and process failure as separate signals. Around the `oscdimg.exe` call, temporarily allow PowerShell's native adapter to return stderr records, capture the exact native exit code, restore the caller's error preference, and normalize `ErrorRecord` instances to their exception messages before logging; blank records and PowerShell type-string artifacts are discarded.
 * Keep Quick installed acceptance passive, while Release may run bounded, reversible functional probes. WER uses an ephemeral per-executable LocalDumps registration; NFS restores feature/service state; Windows Update accepts only an exact zero-applicable result or one successful software-update install; developer probes use isolated temporary projects and terminate timed-out process trees.
 * Model `Custom` as a complete policy state derived from an implemented base profile, not as a label over stale preset state. Manual UAC/package changes enter Custom mode, strict preset import replaces the complete catalog action map, and inventory-scoped overrides are never serialized across images.
-* Keep the human build path in one persistent window. Expose only actual builder inputs, derive profile names/descriptions from canonical policy files, show unsupported profiles with their blocking reason, and drive progress from the durable build log rather than rotating dialogs or estimated-time screens.
+* Keep the human build and repair paths inside WinUtil's existing compiled WPF `Win11ISO` workspace. Preserve its source selection, edition selection, driver injection, Analyze/Modify lifecycle, ISO/USB output, status log, taskbar progress, `$sync` state, and runspace conventions instead of maintaining a second desktop UI.
 * For Evaluation editions, retain the source ISO's native edition/channel configuration and use the answer file's exact WIM-index selection. Never synthesize a Retail `ei.cfg` for `EnterpriseEval`; that can make Windows Setup demand or reject a product key even though the answer file contains no key.
-* Keep repair as a task inside the existing human launcher. Repair definitions own narrow inspect/apply contracts and populate the UI; the shared orchestration owns read-only source mounting, isolated copying, bootable repackaging, output validation, and cleanup. Add a definition only for an observed repair need rather than another launcher or speculative operations.
-* Load the internal build and repair engines in the launcher's script scope. Windows Forms event handlers execute after form construction and must not depend on functions that were only dot-sourced into the startup function's local scope.
-* Present primary human workflows as always-visible tabs in the main workspace. A compact mode dropdown hides available capabilities and makes switching less discoverable; tabs may move the shared configuration panel but must not duplicate orchestration or state logic.
-* Lay out tab actions with a docked table rather than fixed right-edge coordinates, and keep the mode's primary action inside its tab. Validate bounds only after an invisible real `Show()` plus Windows message-loop layout pass; `CreateControl()`/`PerformLayout()` alone can leave the configuration client area uninitialized and falsely reject visible controls. Switch through every tab and fail startup if any required action is missing, attached to the wrong tab, zero-sized, outside the real configuration client area, or mislabeled.
+* Keep Build and Repair discoverable as nested WPF modes within `WPFTab5`; the existing Build steps remain intact and Repair receives only the controls its inspect/apply/repackage workflow needs. Do not move shared panels between parents at runtime or duplicate the native workflow in WinForms.
+* Compile product repair functions from `functions/private/` with the rest of WinUtil. A tool under `tools/` may remain as a noninteractive wrapper for tests or CI, but compiled WPF event handlers must never depend on source-relative dot-sourcing or tool-only functions.
+* Treat `Build-LeanDAW.cmd` as an optional one-click bootstrap into the native compiled WinUtil interface, not as a product UI. It may compile/run and navigate to `Win11ISO`; it must not own configuration, progress, repair logic, or a separate window.
+* Keep noninteractive builders and acceptance harnesses as automation surfaces. They consume the same policy and servicing functions as the WPF product but do not dictate or duplicate the human interface.
+* Retire the standalone WinForms launcher only after native WPF parity is demonstrated for source selection, profile/edition/driver configuration, Build, Repair inspection/repackaging, progress/logging, output links, cleanup, and error recovery.
 
 **Lessons and open verification gaps**
 
@@ -143,6 +144,7 @@ This compact record is the project owner's requested source for progress, decisi
 * `2026-08-25` — Replaced the task dropdown with always-visible **Build customized ISO** and **Repair existing ISO** tabs inside the main workspace. Both tabs reuse the same configuration panel, progress/log surface, and orchestration rather than duplicating forms. The integrated run passed 70 tests; compile and focused analysis passed. Live Windows sizing, tab focus, and rendering remain to be checked.
 * `2026-08-25` — Fixed the live tab-layout regression that hid source/analyze/output/primary buttons. Configuration rows now use a docked three-column table, the mode-specific primary action lives inside the selected tab, and a Windows runtime assertion lays out both tabs and verifies required action bounds/text before showing the form. The integrated run passed 70 tests; compile and focused analysis passed. The assertion will run on the user's next Windows launch; visual DPI/layout confirmation remains live evidence.
 * `2026-08-25` — Fixed the assertion's first live startup failure: it compared `OutputIsoButton` against pre-show WinForms geometry, where the configuration client area was not yet initialized. Startup now shows the form invisibly and off-taskbar, processes the Windows message loop while laying out and validating both tabs, restores the Build tab/window properties in `finally`, and then opens normally. The integrated launcher/build/repair/setup run passed 70 tests; compile and focused production analysis passed. The corrected Windows startup remains the immediate live confirmation.
+* `2026-08-28` — Audited the fork additions against pinned upstream WinUtil and corrected the target architecture. Upstream already owns the WPF `Win11ISO` source/edition/driver/Modify/ISO/USB/log workflow, and the fork already integrates profiles, advanced selection, inventory, safety, one-mount servicing, and evidence into that compiled path. The late WinForms launcher duplicated the human UI and caused avoidable scope, event, and layout defects. Section 3A now makes native `WPFTab5` the sole human Build/Repair surface, keeps headless tools for automation only, reduces the CMD to a bootstrap, and requires parity before deleting the duplicate launcher. No requested Lean DAW, repair, output, validation, or usability scope was removed.
 
 ---
 
@@ -274,7 +276,7 @@ Baseline
   → image inventory
   → removal resolver
   → offline servicing
-  → UI/policy integration
+  → native WPF Build/Repair consolidation
   → ISO build
   → VM install
   → compatibility verification
@@ -282,6 +284,98 @@ Baseline
 ```
 
 Agent A and Agent B can work largely independently after the policy schema has a tested v1. Agent C starts immediately because tests should constrain both implementations rather than being added afterward.
+
+---
+
+# 3A. Native WinUtil consolidation — current architecture correction
+
+This section supersedes the standalone WinForms launcher as the intended human product surface. It does **not** remove any requested capability. It places each capability in the existing WinUtil layer that already owns the corresponding lifecycle, state, logging, or output behavior.
+
+## Target runtime shape
+
+```text
+Build-LeanDAW.cmd (optional bootstrap only)
+        ↓
+Compile.ps1 -Run / compiled winutil.ps1
+        ↓
+native WPF WPFTab5: Win11ISO
+        ├── Build customized ISO
+        │     source → verify → edition → analyze → profile/customize → modify → ISO/USB
+        └── Repair existing ISO
+              source → inspect → applicable repair → output → repackage
+
+Both modes use compiled functions/private code, WinUtil runspaces, $sync state,
+the existing ISO status log/progress surface, and shared media-packaging primitives.
+Headless tools remain automation/acceptance adapters, not another human UI.
+```
+
+## Capability placement
+
+| Capability | Canonical home | Preserve/reuse | Consolidation required |
+| --- | --- | --- | --- |
+| Source ISO, edition, driver, Analyze, Modify, ISO/USB choices | Native WPF `WPFTab5`, `Invoke-WinUtilISO*` | Existing upstream workflow and control names | Keep the Build path in place; do not reproduce these controls in another form. |
+| Profiles, summaries, grouped choices, Expert mode, package selector, preset import/export, profile comparison | `policy/`, compiled component-policy functions, native WPF Step 3 | Existing `$sync.configs.componentPolicy` and WPF bindings | Complete live WPF proving; remove the launcher's separate profile model. |
+| Inventory, resolver, safety, action bundles | `functions/private/` compiled into `winutil.ps1` | Existing versioned contracts and conservative unknown behavior | Keep UI-independent and shared by WPF plus automation. |
+| One-mount servicing, registry/setup actions, drivers, cleanup, manifests | Compiled private servicing/media functions | Existing transaction and `Invoke-WinUtilISOScript` path | WPF remains the product caller; headless tooling calls the same core rather than becoming a second product engine. |
+| ESD conversion, FAT32 splitting, ISO/USB publication | Existing compiled image/output functions | Native Step 4 output workflow and evidence publisher | Share packaging primitives with Repair; retain original-media protection and fail-closed publication. |
+| Full progress, live log, taskbar state, result/error feedback | Native WPF status log, progress indicator, taskbar, runspaces | `Write-WinUtilISOLog`, `Set-WinUtilTweaksProgressIndicator`, existing dispatcher patterns | Add explicit Build/Repair stages and durable output/evidence links in this surface; remove launcher polling/UI. |
+| Small ISO repairs | New nested Repair mode in `WPFTab5` plus compiled repair functions | Current data-driven Evaluation repair contract and isolated copy/repackage behavior | Move the product repair engine out of `tools/`; expose inspection, applicability, output, progress, and cleanup through WPF. |
+| One-click startup | Root command file | Existing elevation in compiled WinUtil startup | Make the command compile/run native WinUtil and optionally navigate to `Win11ISO`; it must create no form of its own. |
+| Noninteractive builds, Hyper-V, installed acceptance | `tools/` and CI | Existing injection seams and release gates | Keep headless; use the same core functions and schemas, with no human-layout responsibilities. |
+
+## Required consolidation work
+
+* [ ] **Make the native WPF `Win11ISO` workspace the only human ISO interface.**
+
+  * Add always-visible nested `Build customized ISO` and `Repair existing ISO` tabs inside `WPFTab5`.
+  * Keep the current Build controls and their existing event/function contract; do not replace the upstream ISO wizard with launcher controls.
+  * Give Repair its own narrow source/inspection/repair/output controls without moving one shared control tree between tab parents.
+  * **Proof required:** Windows screenshot and click-through showing both modes, all required controls, keyboard navigation, DPI-safe layout, and no second application window.
+
+* [ ] **Compile the repair capability into WinUtil.**
+
+  * Move the repair definitions and UI-independent inspect/apply logic into appropriately named files under `functions/private/`.
+  * Preserve the current Evaluation-media repair behavior: validate a single pinned image index, reject answer files containing a product key, remove only the observed invalid Retail Evaluation override/stale `PID.txt`, never service `install.wim`, never modify the source ISO, and clean partial output.
+  * Keep `tools/Invoke-WinUtilIsoRepair.ps1` only if a headless wrapper has a real test/automation consumer; the wrapper must call compiled-source functions rather than own a divergent implementation.
+  * **Proof required:** compiled-script command-resolution test, focused repair tests, and a real repaired ISO that passes Setup product-key validation.
+
+* [ ] **Use one shared media and packaging implementation.**
+
+  * Reuse common mount/dismount, robust copy, `oscdimg`, output validation, cleanup, and logging primitives between Build and Repair.
+  * Keep Build's servicing transaction separate from Repair's no-servicing copy/repackage path, while sharing only the mechanics that are genuinely identical.
+  * Remove duplicated native-process normalization, packaging exit handling, and cleanup logic after both consumers use the shared functions.
+  * **Proof required:** planted packaging/copy failures exercise both callers, and neither caller can publish a missing, empty, or partial ISO.
+
+* [ ] **Unify WPF workflow state and progress without merging Build and Repair state.**
+
+  * Use WinUtil's existing runspace/busy-state, dispatcher, status log, global progress bar, and taskbar integration for both modes.
+  * Maintain distinct Build and Repair state objects so switching modes cannot reuse a mounted image, stale inventory, output path, or repair inspection from the other mode.
+  * Block tab changes, window close, and conflicting actions only while their destructive/background operation is active; recover controls and clean owned state on failure.
+  * Show stable stages for inspection, media copy, servicing where applicable, packaging, hashing/publication, completion, and cleanup rather than replacing the main workspace with estimated-time screens.
+  * **Proof required:** state-transition tests plus a Windows run demonstrating monotonic progress, live logs, cancellation/error recovery, and usable controls after failure.
+
+* [ ] **Reduce `Build-LeanDAW.cmd` to a native-WinUtil bootstrap.**
+
+  * It may verify the checkout, invoke `Compile.ps1 -Run`, rely on WinUtil's existing elevation, and request initial navigation to `Win11ISO` through a supported startup parameter/state.
+  * It must not load Windows Forms, enumerate profiles, inspect media, invoke servicing/repair directly, or maintain its own progress window.
+  * Preserve a simple double-click path; users should not need a parameter-heavy PowerShell command.
+  * **Proof required:** one double-click opens the compiled WinUtil WPF window directly to the ISO workspace with no duplicate UI process/window.
+
+* [ ] **Retire the duplicate launcher after parity, not before.**
+
+  * Delete `tools/Start-WinUtilLeanDawBuild.ps1` and its launcher-layout tests after every human capability above is present and proven in WPF.
+  * Remove launcher-only profile, layout, polling, output-link, repair-wiring, and `oscdimg` discovery code; keep any underlying capability still consumed by automation or native WinUtil.
+  * Update the Win11 Creator guide so the native WPF path is the only documented human workflow.
+  * **Proof required:** repository search finds no product dependency on the retired WinForms launcher, while focused WPF/build/repair tests and compile remain green.
+
+* [ ] **Prove native parity before resuming feature expansion.**
+
+  * Run the relevant Pester suites and `Compile.ps1` on every consolidation slice.
+  * On Windows, run `Compile.ps1 -Run` and exercise source selection, supported-media rejection, edition/profile/driver choices, Analyze, Custom/Expert changes, Build, Repair, ISO output, USB selection, reset, close, and error recovery.
+  * Build `lean-daw-defender-retained` from the official supported ISO, repair only when inspection says it is applicable, then boot/install the resulting media in a clean VM or Ventoy path and retain the normal manifests/logs.
+  * **Proof required:** the existing release gates consume those normal outputs; do not create a separate consolidation certificate or readiness dashboard.
+
+**Retirement condition:** this section is complete when the native compiled WinUtil WPF interface provides the complete human Build/Repair workflow and the standalone WinForms implementation is gone. The remaining component, VM, DAW, developer, and hardware requirements continue unchanged in their existing sections.
 
 ---
 
@@ -467,6 +561,8 @@ selected telemetry / consumer-content behavior
 
 The existing wizard should remain simple by default.
 
+**Native-surface rule:** these items are satisfied only by the compiled WPF `WPFTab5` implementation. Equivalent controls in `Build-LeanDAW.cmd` or another standalone window do not count. Existing headless/UI-model tests remain useful, but each item's required screenshot must come from the native WinUtil window.
+
 ## Recommended hierarchy
 
 ```text
@@ -512,6 +608,8 @@ Step 5: ISO / USB
 # 7. Agent A — Advanced Package Selector
 
 This is the conceptual successor to SlimDown's selector.
+
+**Native-surface rule:** the selector remains part of the mounted-image Analyze/Modify lifecycle in the compiled WPF `Win11ISO` tab. A static profile list or duplicated launcher selector does not satisfy this section.
 
 * [ ] **Build the Advanced Package Selector from actual image inventory rather than static lists.**
 
@@ -1181,6 +1279,22 @@ Branch creation, merge counts, and CI links are coordination details and do not 
 ---
 
 # 22. Optimal implementation order
+
+## Current priority — native WinUtil consolidation
+
+Before adding another product capability, execute section 3A in vertical slices:
+
+```text
+compiled repair core
+→ native WPF Build/Repair modes
+→ shared media/packaging primitives
+→ native progress and state recovery
+→ one-click native bootstrap
+→ Windows parity run
+→ remove duplicate WinForms launcher
+```
+
+Do not postpone the existing Lean DAW, servicing, validation, or output requirements. This consolidation changes their product entry point, not their scope or acceptance criteria.
 
 ## Phase 1 — Foundation
 
